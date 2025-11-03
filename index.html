@@ -15,6 +15,7 @@
                 <li><a href="#about">About</a></li>
                 <li><a href="#experience">Experience</a></li>
                 <li><a href="#contact">Contact</a></li>
+                <li><a href="tracker.html" id="tracker-link" style="display: none;">Job Tracker</a></li>
                 <li><a href="#" id="auth-btn">Login</a></li>
             </ul>
         </nav>
@@ -111,12 +112,15 @@
         })
 
         function updateAuthUI(session) {
+            const trackerLink = document.getElementById('tracker-link')
             if (session) {
                 authBtn.textContent = 'Logout'
                 authBtn.onclick = handleLogout
+                trackerLink.style.display = 'block'
             } else {
                 authBtn.textContent = 'Login'
                 authBtn.onclick = showAuthModal
+                trackerLink.style.display = 'none'
             }
         }
 

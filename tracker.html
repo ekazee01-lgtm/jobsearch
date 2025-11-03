@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Tracker | Eric Kazee</title>
+    <link rel="stylesheet" href="src/styles.css">
+    <link rel="stylesheet" href="src/tracker.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <header>
+        <nav>
+            <h1><a href="index.html">Eric Kazee</a></h1>
+            <ul>
+                <li><a href="index.html">Home</a></li>
+                <li><a href="tracker.html" class="active">Job Tracker</a></li>
+                <li><button id="logoutBtn" class="btn-secondary">Logout</button></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main id="tracker-app">
+        <!-- Loading state -->
+        <div id="loading" class="loading">
+            <p>Loading your job applications...</p>
+        </div>
+
+        <!-- Auth required message -->
+        <div id="auth-required" class="auth-required" style="display: none;">
+            <h2>Authentication Required</h2>
+            <p>Please <a href="index.html">login</a> to access your job tracker.</p>
+        </div>
+
+        <!-- Dashboard content -->
+        <div id="dashboard" style="display: none;">
+            <!-- Stats Summary -->
+            <section class="stats-summary">
+                <div class="stat-card">
+                    <h3 id="total-apps">0</h3>
+                    <p>Total Applications</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="active-apps">0</h3>
+                    <p>Active</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="interview-count">0</h3>
+                    <p>Interviews</p>
+                </div>
+                <div class="stat-card">
+                    <h3 id="response-rate">0%</h3>
+                    <p>Response Rate</p>
+                </div>
+            </section>
+
+            <!-- Add Job Button -->
+            <button id="add-job-btn" class="btn-primary">+ Add New Job</button>
+
+            <!-- Job Pipeline (Kanban) -->
+            <section class="pipeline">
+                <div class="pipeline-column" data-status="to-review">
+                    <h3>📋 To Review <span class="count">0</span></h3>
+                    <div class="job-cards" id="to-review-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="bookmarked">
+                    <h3>📌 Bookmarked <span class="count">0</span></h3>
+                    <div class="job-cards" id="bookmarked-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="applying">
+                    <h3>✍️ Applying <span class="count">0</span></h3>
+                    <div class="job-cards" id="applying-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="applied">
+                    <h3>📤 Applied <span class="count">0</span></h3>
+                    <div class="job-cards" id="applied-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="interview">
+                    <h3>💼 Interview <span class="count">0</span></h3>
+                    <div class="job-cards" id="interview-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="offer">
+                    <h3>🎉 Offer <span class="count">0</span></h3>
+                    <div class="job-cards" id="offer-cards"></div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- Add/Edit Job Modal -->
+    <div id="job-modal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h2 id="modal-title">Add New Job</h2>
+            <form id="job-form">
+                <input type="hidden" id="job-id">
+
+                <label for="company">Company *</label>
+                <input type="text" id="company" required>
+
+                <label for="role">Role *</label>
+                <input type="text" id="role" required placeholder="AI Adoption Specialist, etc.">
+
+                <label for="location">Location</label>
+                <input type="text" id="location" placeholder="Remote, Dallas, TX, etc.">
+
+                <label for="source">Source</label>
+                <input type="text" id="source" placeholder="LinkedIn, Indeed, Referral, etc.">
+
+                <label for="job-url">Job Posting URL</label>
+                <input type="url" id="job-url" placeholder="https://...">
+
+                <label for="status">Status *</label>
+                <select id="status" required>
+                    <option value="To Review">To Review</option>
+                    <option value="Bookmarked">Bookmarked</option>
+                    <option value="Applying">Applying</option>
+                    <option value="Applied">Applied</option>
+                    <option value="Interview">Interview</option>
+                    <option value="Offer">Offer</option>
+                    <option value="Rejected">Rejected</option>
+                </select>
+
+                <label for="description">Job Description / Notes</label>
+                <textarea id="description" rows="6" placeholder="Paste job description, requirements, notes..."></textarea>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" id="cancel-btn">Cancel</button>
+                    <button type="submit" class="btn-primary">Save Job</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="src/tracker.js"></script>
+</body>
+</html>
