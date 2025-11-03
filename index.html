@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eric Kazee | AI Adoption & Legal Technology Specialist</title>
     <link rel="stylesheet" href="src/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <header>
@@ -14,6 +15,7 @@
                 <li><a href="#about">About</a></li>
                 <li><a href="#experience">Experience</a></li>
                 <li><a href="#contact">Contact</a></li>
+                <li><a href="#" id="auth-btn">Login</a></li>
             </ul>
         </nav>
     </header>
@@ -57,5 +59,138 @@
     <footer>
         <p>&copy; 2024 Eric Kazee. Building in public.</p>
     </footer>
+
+    <!-- Auth Modal -->
+    <div id="auth-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3 id="auth-title">Login</h3>
+            <form id="auth-form">
+                <input type="email" id="email" placeholder="Email" required>
+                <input type="password" id="password" placeholder="Password">
+                <button type="submit" id="submit-btn">Login</button>
+            </form>
+            <p>
+                <span id="toggle-text">Don't have an account?</span>
+                <a href="#" id="toggle-mode">Sign Up</a>
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Replace these with your Supabase project credentials
+        const SUPABASE_URL = 'https://snmdcbrvvzasubdnnsbd.supabase.co'
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubWRjYnJ2dnphc3ViZG5uc2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxOTIwNTQsImV4cCI6MjA3Nzc2ODA1NH0.4-9MrZgla1YDzCR3hrRMygYxphDGNOmEmgDmnH6e6L0'
+
+        // Initialize Supabase client
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+        // Auth state management
+        let isLogin = true
+
+        // DOM elements
+        const authBtn = document.getElementById('auth-btn')
+        const authModal = document.getElementById('auth-modal')
+        const closeBtn = document.querySelector('.close')
+        const authForm = document.getElementById('auth-form')
+        const authTitle = document.getElementById('auth-title')
+        const submitBtn = document.getElementById('submit-btn')
+        const toggleText = document.getElementById('toggle-text')
+        const toggleMode = document.getElementById('toggle-mode')
+        const emailInput = document.getElementById('email')
+        const passwordInput = document.getElementById('password')
+
+        // Check initial auth state
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            updateAuthUI(session)
+        })
+
+        // Listen for auth changes
+        supabase.auth.onAuthStateChange((event, session) => {
+            updateAuthUI(session)
+        })
+
+        function updateAuthUI(session) {
+            if (session) {
+                authBtn.textContent = 'Logout'
+                authBtn.onclick = handleLogout
+            } else {
+                authBtn.textContent = 'Login'
+                authBtn.onclick = showAuthModal
+            }
+        }
+
+        function showAuthModal() {
+            authModal.style.display = 'block'
+        }
+
+        function hideAuthModal() {
+            authModal.style.display = 'none'
+        }
+
+        function toggleAuthMode() {
+            isLogin = !isLogin
+            if (isLogin) {
+                authTitle.textContent = 'Login'
+                submitBtn.textContent = 'Login'
+                toggleText.textContent = "Don't have an account?"
+                toggleMode.textContent = 'Sign Up'
+                passwordInput.style.display = 'block'
+            } else {
+                authTitle.textContent = 'Sign Up'
+                submitBtn.textContent = 'Sign Up'
+                toggleText.textContent = 'Already have an account?'
+                toggleMode.textContent = 'Login'
+                passwordInput.style.display = 'block'
+            }
+        }
+
+        async function handleAuth(e) {
+            e.preventDefault()
+            const email = emailInput.value
+            const password = passwordInput.value
+
+            try {
+                if (isLogin) {
+                    const { error } = await supabase.auth.signInWithPassword({
+                        email,
+                        password
+                    })
+                    if (error) throw error
+                } else {
+                    const { error } = await supabase.auth.signUp({
+                        email,
+                        password
+                    })
+                    if (error) throw error
+                    alert('Check your email for confirmation!')
+                }
+                hideAuthModal()
+                authForm.reset()
+            } catch (error) {
+                alert(error.message)
+            }
+        }
+
+        async function handleLogout() {
+            const { error } = await supabase.auth.signOut()
+            if (error) alert(error.message)
+        }
+
+        // Event listeners
+        authForm.addEventListener('submit', handleAuth)
+        closeBtn.addEventListener('click', hideAuthModal)
+        toggleMode.addEventListener('click', (e) => {
+            e.preventDefault()
+            toggleAuthMode()
+        })
+
+        // Close modal when clicking outside
+        window.addEventListener('click', (e) => {
+            if (e.target === authModal) {
+                hideAuthModal()
+            }
+        })
+    </script>
 </body>
 </html>
