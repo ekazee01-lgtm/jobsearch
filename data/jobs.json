@@ -1,0 +1,20 @@
+{
+  "jobs": [
+    {
+      "id": 1,
+      "company": "Example Corp",
+      "role": "Software Engineer",
+      "applied_date": "2025-10-10",
+      "status": "applied",
+      "notes": "Referred by a friend"
+    },
+    {
+      "id": 2,
+      "company": "Acme Inc",
+      "role": "Backend Engineer",
+      "applied_date": "2025-10-20",
+      "status": "interview",
+      "notes": "Phone screen scheduled"
+    }
+  ]
+}
