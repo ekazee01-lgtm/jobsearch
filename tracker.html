@@ -7,6 +7,8 @@
     <link rel="stylesheet" href="src/styles.css">
     <link rel="stylesheet" href="src/tracker.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="js/config.js"></script>
+    <script src="js/ai-features-secure.js"></script>
 </head>
 <body>
     <header>
@@ -54,8 +56,12 @@
                 </div>
             </section>
 
-            <!-- Add Job Button -->
-            <button id="add-job-btn" class="btn-primary">+ Add New Job</button>
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button id="add-job-btn" class="btn-primary">+ Add New Job</button>
+                <button id="setup-ai-btn" class="btn-secondary">🤖 Setup AI Features</button>
+                <button id="manage-resume-btn" class="btn-secondary">📄 Manage Resume</button>
+            </div>
 
             <!-- Job Pipeline (Kanban) -->
             <section class="pipeline">
@@ -134,6 +140,105 @@
                     <button type="submit" class="btn-primary">Save Job</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Resume Management Modal -->
+    <div id="resume-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeResumeModal()">&times;</span>
+            <h2>📄 Master Resume Management</h2>
+
+            <div id="resume-content">
+                <div class="resume-section">
+                    <label for="master-resume">Master Resume (Markdown format):</label>
+                    <textarea id="master-resume" rows="20" placeholder="Enter your master resume in Markdown format...
+# Your Name
+## Professional Summary
+..."></textarea>
+                </div>
+
+                <div class="resume-section">
+                    <label for="cover-letter-template">Cover Letter Template (Optional):</label>
+                    <textarea id="cover-letter-template" rows="8" placeholder="Dear Hiring Manager,
+
+I am writing to express my interest in..."></textarea>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeResumeModal()">Cancel</button>
+                    <button type="button" class="btn-primary" onclick="saveMasterResume()">Save Master Resume</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Job Actions Modal -->
+    <div id="ai-actions-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeAIActionsModal()">&times;</span>
+            <h2 id="ai-modal-title">🤖 AI Actions</h2>
+
+            <div id="ai-content">
+                <div class="ai-action-section">
+                    <h3>📝 Resume Tailoring</h3>
+                    <p>Use AI to customize your resume for this specific job posting.</p>
+                    <button id="tailor-resume-btn" class="btn-primary" onclick="tailorResumeForJob()">
+                        ✨ Tailor Resume with AI
+                    </button>
+                    <div id="tailoring-status" class="status-message"></div>
+                </div>
+
+                <div class="ai-action-section" id="application-section" style="display: none;">
+                    <h3>📧 Application Preparation</h3>
+                    <p>Prepare your tailored application for submission.</p>
+                    <select id="resume-version-select">
+                        <option value="">Select a resume version...</option>
+                    </select>
+                    <button id="prepare-application-btn" class="btn-secondary" onclick="prepareApplication()" disabled>
+                        📤 Prepare Application
+                    </button>
+                    <div id="application-status" class="status-message"></div>
+                </div>
+
+                <div class="ai-action-section">
+                    <h3>📊 Application History</h3>
+                    <div id="job-events" class="events-list">
+                        <p>Loading events...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Preview Modal -->
+    <div id="application-preview-modal" class="modal">
+        <div class="modal-content large">
+            <span class="close" onclick="closeApplicationPreview()">&times;</span>
+            <h2>📧 Application Preview</h2>
+
+            <div class="application-preview">
+                <div class="email-details">
+                    <h3>Email Details</h3>
+                    <p><strong>Subject:</strong> <span id="email-subject"></span></p>
+                    <p><strong>To:</strong> Apply to this company manually</p>
+                </div>
+
+                <div class="email-body">
+                    <h3>Cover Letter</h3>
+                    <div id="cover-letter-preview" class="content-preview"></div>
+                </div>
+
+                <div class="resume-attachment">
+                    <h3>Resume</h3>
+                    <div id="resume-preview" class="content-preview"></div>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeApplicationPreview()">Close</button>
+                    <button type="button" class="btn-primary" onclick="copyToClipboard()">📋 Copy All to Clipboard</button>
+                </div>
+            </div>
         </div>
     </div>
 

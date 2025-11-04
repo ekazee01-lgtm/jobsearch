@@ -45,14 +45,24 @@
     color: #666;
 }
 
-/* Add Job Button */
-#add-job-btn {
-    margin: 2rem auto;
-    width: 100%;
-    max-width: 300px;
-    display: block;
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin: 2rem 0;
+    flex-wrap: wrap;
+}
+
+.action-buttons button {
     padding: 1rem 2rem;
     font-size: 1rem;
+    border-radius: 6px;
+    transition: transform 0.2s;
+}
+
+.action-buttons button:hover {
+    transform: translateY(-1px);
 }
 
 /* Pipeline (Kanban Board) */
@@ -161,9 +171,170 @@
     color: white;
 }
 
+.job-card .actions .ai-btn {
+    background: #10b981;
+    color: white;
+    font-size: 0.75rem;
+}
+
 .job-card .actions .delete-btn {
     background: #dc3545;
     color: white;
+}
+
+/* AI Features Styles */
+.ai-action-section {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin: 1rem 0;
+    background: #f9fafb;
+}
+
+.ai-action-section h3 {
+    margin-top: 0;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ai-action-section p {
+    color: #6b7280;
+    margin: 0.5rem 0 1rem 0;
+}
+
+.status-message {
+    margin-top: 1rem;
+    padding: 0.75rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.status-message .success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+
+.status-message .error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+}
+
+.status-message .loading-spinner {
+    background: #dbeafe;
+    color: #1e40af;
+    border: 1px solid #93c5fd;
+}
+
+.events-list {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    padding: 1rem;
+    background: white;
+}
+
+.event-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.event-item:last-child {
+    border-bottom: none;
+}
+
+.event-emoji {
+    font-size: 1.2rem;
+}
+
+.event-type {
+    font-weight: 500;
+    color: #374151;
+    text-transform: capitalize;
+}
+
+.event-time {
+    color: #6b7280;
+    font-size: 0.85rem;
+    margin-left: auto;
+}
+
+/* Resume Management */
+.resume-section {
+    margin: 1.5rem 0;
+}
+
+.resume-section label {
+    display: block;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    color: #374151;
+}
+
+.resume-section textarea {
+    width: 100%;
+    min-height: 200px;
+    padding: 1rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+    resize: vertical;
+}
+
+/* Application Preview */
+.modal-content.large {
+    max-width: 900px;
+    width: 95%;
+}
+
+.application-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.email-details {
+    background: #f8fafc;
+    padding: 1rem;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+}
+
+.email-details h3 {
+    margin-top: 0;
+    color: #1e293b;
+}
+
+.email-body, .resume-attachment {
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.email-body h3, .resume-attachment h3 {
+    background: #f1f5f9;
+    margin: 0;
+    padding: 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    color: #1e293b;
+}
+
+.content-preview {
+    padding: 1rem;
+    max-height: 300px;
+    overflow-y: auto;
+    font-family: inherit;
+    line-height: 1.6;
+    background: white;
 }
 
 /* Modal */

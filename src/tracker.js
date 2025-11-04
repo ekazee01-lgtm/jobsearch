@@ -6,6 +6,8 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let jobs = [];
+let aiFeatures = null;
+let currentJobId = null;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -113,6 +115,7 @@ function createJobCard(job) {
         ${job.description ? `<div style="margin-top: 0.5rem; font-size: 0.875rem; color: #666;">${job.description.substring(0, 100)}${job.description.length > 100 ? '...' : ''}</div>` : ''}
         <div class="actions">
             <button class="edit-btn" onclick="editJob('${job.id}')">Edit</button>
+            <button class="ai-btn" onclick="openAIActions('${job.id}')">🤖 AI</button>
             <button class="delete-btn" onclick="deleteJob('${job.id}')">Delete</button>
         </div>
     `;
@@ -147,6 +150,10 @@ function setupEventListeners() {
 
     // Add job button
     document.getElementById('add-job-btn').addEventListener('click', () => openJobModal());
+
+    // AI Features buttons
+    document.getElementById('setup-ai-btn').addEventListener('click', setupAIFeatures);
+    document.getElementById('manage-resume-btn').addEventListener('click', openResumeManagement);
 
     // Modal close
     document.querySelector('.close').addEventListener('click', closeJobModal);
@@ -241,6 +248,282 @@ async function handleJobSubmit(e) {
     await loadJobs();
 }
 
+// ============================================================================
+// AI FEATURES INTEGRATION
+// ============================================================================
+
+// Initialize AI features after auth (now using secure backend)
+async function initializeAI() {
+    if (!currentUser) return;
+
+    // Initialize secure AI features class (no API key needed)
+    aiFeatures = new AIFeaturesSecure(supabase);
+}
+
+// Setup AI Features
+window.setupAIFeatures = function() {
+    config.showSetupInstructions();
+}
+
+// Open AI Actions Modal (now using secure backend)
+window.openAIActions = async function(jobId) {
+    currentJobId = jobId;
+    const job = jobs.find(j => j.id === jobId);
+
+    if (!job) return;
+
+    // Initialize AI features if not already done
+    if (!aiFeatures) {
+        aiFeatures = new AIFeaturesSecure(supabase);
+    }
+
+    // Update modal title
+    document.getElementById('ai-modal-title').textContent = `🤖 AI Actions: ${job.role} at ${job.company}`;
+
+    // Load resume versions for this job
+    await loadResumeVersions(jobId);
+
+    // Load job events
+    await loadJobEvents(jobId);
+
+    // Show modal
+    document.getElementById('ai-actions-modal').style.display = 'block';
+}
+
+// Close AI Actions Modal
+window.closeAIActionsModal = function() {
+    document.getElementById('ai-actions-modal').style.display = 'none';
+    currentJobId = null;
+}
+
+// Tailor Resume for Job
+window.tailorResumeForJob = async function() {
+    if (!currentJobId || !aiFeatures) return;
+
+    const statusDiv = document.getElementById('tailoring-status');
+    const btn = document.getElementById('tailor-resume-btn');
+
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Tailoring...';
+        statusDiv.innerHTML = '<div class="loading-spinner">🔄 AI is analyzing the job and tailoring your resume...</div>';
+
+        const result = await aiFeatures.tailorResume(currentJobId, currentUser.id);
+
+        statusDiv.innerHTML = `<div class="success">✅ Resume tailored successfully! Version: ${result.label}</div>`;
+        btn.textContent = '✨ Tailor Resume with AI';
+
+        // Reload resume versions and show application section
+        await loadResumeVersions(currentJobId);
+        document.getElementById('application-section').style.display = 'block';
+
+        // Reload job events
+        await loadJobEvents(currentJobId);
+
+    } catch (error) {
+        console.error('Error tailoring resume:', error);
+        statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+        btn.textContent = '✨ Tailor Resume with AI';
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// Load Resume Versions
+async function loadResumeVersions(jobId) {
+    if (!aiFeatures) return;
+
+    const select = document.getElementById('resume-version-select');
+    const versions = await aiFeatures.getResumeVersions(currentUser.id, jobId);
+
+    select.innerHTML = '<option value="">Select a resume version...</option>';
+
+    versions.forEach(version => {
+        const option = document.createElement('option');
+        option.value = version.id;
+        option.textContent = version.label;
+        select.appendChild(option);
+    });
+
+    // Enable prepare button when version is selected
+    select.addEventListener('change', function() {
+        const prepareBtn = document.getElementById('prepare-application-btn');
+        prepareBtn.disabled = !this.value;
+    });
+}
+
+// Prepare Application
+window.prepareApplication = async function() {
+    const resumeVersionId = document.getElementById('resume-version-select').value;
+    if (!resumeVersionId || !currentJobId || !aiFeatures) return;
+
+    const statusDiv = document.getElementById('application-status');
+    const btn = document.getElementById('prepare-application-btn');
+
+    try {
+        btn.disabled = true;
+        btn.textContent = 'Preparing...';
+        statusDiv.innerHTML = '<div class="loading-spinner">🔄 Preparing application...</div>';
+
+        const emailContent = await aiFeatures.prepareApplication(currentJobId, resumeVersionId, currentUser.id);
+
+        statusDiv.innerHTML = '<div class="success">✅ Application prepared! Click to preview.</div>';
+
+        // Show application preview
+        showApplicationPreview(emailContent);
+
+        await loadJobEvents(currentJobId);
+
+    } catch (error) {
+        console.error('Error preparing application:', error);
+        statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📤 Prepare Application';
+    }
+}
+
+// Load Job Events
+async function loadJobEvents(jobId) {
+    if (!aiFeatures) return;
+
+    const eventsDiv = document.getElementById('job-events');
+    const events = await aiFeatures.getJobEvents(jobId);
+
+    if (events.length === 0) {
+        eventsDiv.innerHTML = '<p>No events yet.</p>';
+        return;
+    }
+
+    const eventsHtml = events.map(event => {
+        const date = new Date(event.created_at).toLocaleDateString();
+        const time = new Date(event.created_at).toLocaleTimeString();
+        const emoji = getEventEmoji(event.type);
+
+        return `
+            <div class="event-item">
+                <span class="event-emoji">${emoji}</span>
+                <span class="event-type">${event.type}</span>
+                <span class="event-time">${date} ${time}</span>
+            </div>
+        `;
+    }).join('');
+
+    eventsDiv.innerHTML = eventsHtml;
+}
+
+function getEventEmoji(eventType) {
+    const emojis = {
+        'tailored': '✨',
+        'prepared_for_submission': '📤',
+        'submitted': '📧',
+        'interview_scheduled': '📅',
+        'application_viewed': '👀'
+    };
+    return emojis[eventType] || '📝';
+}
+
+// Resume Management
+window.openResumeManagement = async function() {
+    if (!currentUser) return;
+
+    // Initialize AI features if needed
+    if (!aiFeatures) {
+        aiFeatures = new AIFeaturesSecure(supabase);
+    }
+
+    // Load existing master resume
+    if (aiFeatures) {
+        const masterResume = await aiFeatures.getMasterResume(currentUser.id);
+        if (masterResume) {
+            document.getElementById('master-resume').value = masterResume.resume_md || '';
+            document.getElementById('cover-letter-template').value = masterResume.cover_letter_md || '';
+        }
+    }
+
+    document.getElementById('resume-modal').style.display = 'block';
+}
+
+window.closeResumeModal = function() {
+    document.getElementById('resume-modal').style.display = 'none';
+}
+
+window.saveMasterResume = async function() {
+    if (!currentUser) return;
+
+    const resumeText = document.getElementById('master-resume').value;
+    const coverLetterText = document.getElementById('cover-letter-template').value;
+
+    if (!resumeText.trim()) {
+        alert('Please enter your resume content');
+        return;
+    }
+
+    // Initialize AI features if needed
+    if (!aiFeatures) {
+        aiFeatures = new AIFeaturesSecure(supabase);
+    }
+
+    if (!aiFeatures) {
+        // Create a minimal version without AI features
+        const { error } = await supabase
+            .from('resume_versions')
+            .upsert({
+                user_id: currentUser.id,
+                label: 'Master',
+                resume_md: resumeText,
+                cover_letter_md: coverLetterText
+            }, {
+                onConflict: 'user_id,label'
+            });
+
+        if (error) {
+            alert('Error saving resume: ' + error.message);
+            return;
+        }
+    } else {
+        try {
+            await aiFeatures.saveMasterResume(currentUser.id, resumeText, coverLetterText);
+        } catch (error) {
+            alert('Error saving resume: ' + error.message);
+            return;
+        }
+    }
+
+    config.showMessage('✅ Master resume saved successfully!', 'success');
+    closeResumeModal();
+}
+
+// Application Preview
+function showApplicationPreview(emailContent) {
+    document.getElementById('email-subject').textContent = emailContent.subject;
+    document.getElementById('cover-letter-preview').innerHTML =
+        emailContent.body.replace(/\n/g, '<br>');
+    document.getElementById('resume-preview').innerHTML =
+        emailContent.resume.replace(/\n/g, '<br>');
+
+    document.getElementById('application-preview-modal').style.display = 'block';
+}
+
+window.closeApplicationPreview = function() {
+    document.getElementById('application-preview-modal').style.display = 'none';
+}
+
+window.copyToClipboard = function() {
+    const subject = document.getElementById('email-subject').textContent;
+    const coverLetter = document.getElementById('cover-letter-preview').textContent;
+    const resume = document.getElementById('resume-preview').textContent;
+
+    const fullContent = `Subject: ${subject}\n\n${coverLetter}\n\n---\n\n${resume}`;
+
+    navigator.clipboard.writeText(fullContent).then(() => {
+        config.showMessage('📋 Application copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Failed to copy: ', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+
 // Edit job
 window.editJob = function(jobId) {
     openJobModal(jobId);
@@ -263,3 +546,4 @@ window.deleteJob = async function(jobId) {
 
     await loadJobs();
 }
+
