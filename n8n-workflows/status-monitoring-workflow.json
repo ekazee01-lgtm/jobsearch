@@ -1,0 +1,312 @@
+{
+  "name": "Status Monitoring & Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "value": 12
+            }
+          ]
+        }
+      },
+      "id": "m1n2o3p4-1234-5678-9abc-def123456789",
+      "name": "Check Applications Twice Daily",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "getAll",
+        "tableId": "job_applications",
+        "options": {
+          "filters": {
+            "values": [
+              {
+                "column": "status",
+                "operator": "in",
+                "value": ["Applied", "Interview Scheduled", "Pending"]
+              }
+            ]
+          }
+        }
+      },
+      "id": "n2o3p4q5-2345-6789-abcd-ef1234567890",
+      "name": "Get Active Applications",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "dateTime": [
+            {
+              "value1": "={{new Date($json.deadline).getTime()}}",
+              "operation": "smaller",
+              "value2": "={{new Date(Date.now() + 7*24*60*60*1000).getTime()}}"
+            }
+          ]
+        }
+      },
+      "id": "o3p4q5r6-3456-789a-bcde-f12345678901",
+      "name": "Check Deadlines (7 days)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "dateTime": [
+            {
+              "value1": "={{new Date($json.date_applied).getTime()}}",
+              "operation": "smaller",
+              "value2": "={{new Date(Date.now() - 14*24*60*60*1000).getTime()}}"
+            }
+          ]
+        }
+      },
+      "id": "p4q5r6s7-4567-89ab-cdef-123456789012",
+      "name": "Check Follow-up Time (14 days)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        680,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "alerts@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "🚨 Application Deadline Alert",
+        "emailType": "html",
+        "message": "The following applications have deadlines within 7 days:\n\n{{range($json)}}\n• {{$item.company}} - {{$item.role}} (Deadline: {{$item.deadline}})\n{{/range}}\n\nAction required!"
+      },
+      "id": "q5r6s7t8-5678-9abc-def1-23456789abcd",
+      "name": "Deadline Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "alerts@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "📞 Follow-up Reminder",
+        "emailType": "html",
+        "message": "Time to follow up on these applications (14+ days old):\n\n{{range($json)}}\n• {{$item.company}} - {{$item.role}} (Applied: {{$item.date_applied}})\n  Status: {{$item.status}}\n{{/range}}\n\nConsider reaching out!"
+      },
+      "id": "r6s7t8u9-6789-abcd-ef12-3456789abcde",
+      "name": "Follow-up Reminder Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interview-scheduled",
+        "options": {}
+      },
+      "id": "s7t8u9v0-789a-bcde-f123-456789abcdef",
+      "name": "Interview Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "tableId": "job_applications",
+        "id": "={{$json.job_id}}",
+        "keysUi": {
+          "keyValues": [
+            {
+              "key": "status",
+              "value": "Interview Scheduled"
+            },
+            {
+              "key": "interview_date",
+              "value": "={{$json.interview_date}}"
+            }
+          ]
+        }
+      },
+      "id": "t8u9v0w1-89ab-cdef-1234-56789abcdef0",
+      "name": "Update Interview Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        460,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "create",
+        "calendarId": "primary",
+        "start": "={{$json.interview_date}}",
+        "end": "={{new Date(new Date($json.interview_date).getTime() + 60*60*1000).toISOString()}}",
+        "summary": "Interview: {{$json.company}} - {{$json.role}}",
+        "description": "Interview with {{$json.company}} for {{$json.role}} position.\n\nPreparation tasks:\n- Review job description\n- Research company\n- Prepare questions\n- Test video setup",
+        "reminders": {
+          "values": [
+            {
+              "method": "email",
+              "minutes": 1440
+            },
+            {
+              "method": "popup",
+              "minutes": 60
+            }
+          ]
+        }
+      },
+      "id": "u9v0w1x2-9abc-def1-2345-6789abcdef01",
+      "name": "Create Calendar Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        680,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "alerts@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "🎉 Interview Scheduled!",
+        "emailType": "html",
+        "message": "Great news! You have an interview scheduled:\n\n📅 Company: {{$json.company}}\n💼 Role: {{$json.role}}\n🕐 Date: {{$json.interview_date}}\n\nCalendar event created with reminders.\n\nGood luck! 🍀"
+      },
+      "id": "v0w1x2y3-abcd-ef12-3456-789abcdef012",
+      "name": "Interview Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        900,
+        600
+      ]
+    }
+  ],
+  "connections": {
+    "Check Applications Twice Daily": {
+      "main": [
+        [
+          {
+            "node": "Get Active Applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active Applications": {
+      "main": [
+        [
+          {
+            "node": "Check Deadlines (7 days)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Follow-up Time (14 days)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Deadlines (7 days)": {
+      "main": [
+        [
+          {
+            "node": "Deadline Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Follow-up Time (14 days)": {
+      "main": [
+        [
+          {
+            "node": "Follow-up Reminder Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interview Webhook": {
+      "main": [
+        [
+          {
+            "node": "Update Interview Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Interview Status": {
+      "main": [
+        [
+          {
+            "node": "Create Calendar Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Calendar Event": {
+      "main": [
+        [
+          {
+            "node": "Interview Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 2,
+  "updatedAt": "2024-11-05T00:00:00.000Z",
+  "versionId": "1"
+}

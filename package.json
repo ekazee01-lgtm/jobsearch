@@ -1,0 +1,36 @@
+{
+  "name": "jobsearch",
+  "version": "1.0.0",
+  "description": "AI Adoption Specialist | Legal Technology | Training & Consulting",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:auth": "playwright test auth.spec.js",
+    "test:tracker": "playwright test tracker.spec.js",
+    "test:e2e": "playwright test e2e-job-ai.spec.js",
+    "test:responsive": "playwright test responsive.spec.js",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:install": "playwright install"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ekazee01-lgtm/jobsearch.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ekazee01-lgtm/jobsearch/issues"
+  },
+  "homepage": "https://github.com/ekazee01-lgtm/jobsearch#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.56.1"
+  }
+}

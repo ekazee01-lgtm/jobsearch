@@ -1,0 +1,287 @@
+{
+  "name": "Human Approval Gates",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "job-review-needed",
+        "options": {}
+      },
+      "id": "a1b2c3d4-approval-gate-webhook",
+      "name": "Job Review Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "approval@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "📋 New Jobs Need Review - {{$json.count}} Found",
+        "emailType": "html",
+        "message": "Hi Eric,\n\nI found {{$json.count}} new job opportunities that match your criteria (AI Score: 7+).\n\n{{range($json.jobs)}}\n🏢 **{{$item.company}}** - {{$item.role}}\n📍 {{$item.location}} | 🎯 Score: {{$item.ai_match_score}}/10\n🔗 [View Job]({{$item.source}})\n\n---\n{{/range}}\n\n**Action Required:**\n1. Visit your job tracker: https://ekazee01-lgtm.github.io/jobsearch/tracker.html\n2. Review each job in the \"To Review\" column\n3. Move jobs to \"Ready to Apply\" to trigger automation\n4. Move to \"Rejected\" to skip\n\nThe automation will handle application submission for approved jobs.\n\nBest regards,\nYour AI Job Assistant"
+      },
+      "id": "b2c3d4e5-review-email-node",
+      "name": "Send Review Request Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "resume-approval",
+        "options": {}
+      },
+      "id": "c3d4e5f6-resume-approval-webhook",
+      "name": "Resume Approval Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "approval@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "✏️ Resume Review Required - {{$json.company}}",
+        "emailType": "html",
+        "message": "Hi Eric,\n\nYour AI assistant has generated a tailored resume and cover letter for:\n\n🏢 **{{$json.company}}** - {{$json.role}}\n\n**AI-Generated Resume:**\n```\n{{$json.tailored_resume}}\n```\n\n**AI-Generated Cover Letter:**\n```\n{{$json.cover_letter}}\n```\n\n**Action Required:**\n1. Review the generated documents\n2. Make any necessary edits\n3. Reply with \"APPROVE\" to submit the application\n4. Reply with \"REVISE\" with your feedback for regeneration\n5. Reply with \"REJECT\" to cancel this application\n\n**Job Details:**\n📍 Location: {{$json.location}}\n🔗 Job URL: {{$json.source}}\n📊 AI Match Score: {{$json.ai_match_score}}/10\n\nWaiting for your approval...\n\nBest regards,\nYour AI Job Assistant"
+      },
+      "id": "d4e5f6g7-resume-review-email",
+      "name": "Send Resume Review Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interview-prep",
+        "options": {}
+      },
+      "id": "e5f6g7h8-interview-prep-webhook",
+      "name": "Interview Prep Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "create",
+        "calendarId": "primary",
+        "start": "={{new Date(new Date($json.interview_date).getTime() - 2*60*60*1000).toISOString()}}",
+        "end": "={{new Date(new Date($json.interview_date).getTime() - 1*60*60*1000).toISOString()}}",
+        "summary": "Interview Prep: {{$json.company}}",
+        "description": "Preparation time for {{$json.company}} - {{$json.role}} interview\n\n📋 **Prep Checklist:**\n• Review job description and requirements\n• Research company background and values\n• Prepare STAR method examples\n• Review your resume and projects\n• Prepare thoughtful questions to ask\n• Test video call setup\n• Choose appropriate attire\n\n🔗 **Resources:**\n• Job Description: {{$json.source}}\n• Company Website: [Research needed]\n• Your Tailored Resume: [Check resume_versions table]\n\n⏰ **Interview Details:**\n• Date: {{$json.interview_date}}\n• Company: {{$json.company}}\n• Role: {{$json.role}}"
+      },
+      "id": "f6g7h8i9-interview-prep-calendar",
+      "name": "Schedule Interview Prep",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1,
+      "position": [
+        460,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "prep@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "🎯 Interview Preparation Required - {{$json.company}}",
+        "emailType": "html",
+        "message": "Hi Eric,\n\n🎉 Great news! You have an interview scheduled:\n\n🏢 **{{$json.company}}** - {{$json.role}}\n📅 **Date:** {{$json.interview_date}}\n📍 **Location:** {{$json.location}}\n\n⏰ **I've blocked 2 hours in your calendar for interview preparation (2 hours before the interview).**\n\n📋 **Preparation Checklist:**\n\n**Research Phase (45 mins):**\n• ✅ Review job description thoroughly\n• ✅ Research company background, mission, values\n• ✅ Look up interviewer(s) on LinkedIn\n• ✅ Check recent company news/announcements\n• ✅ Review your tailored resume for this role\n\n**Practice Phase (45 mins):**\n• ✅ Prepare STAR method examples\n• ✅ Practice common technical questions\n• ✅ Prepare 3-5 thoughtful questions to ask them\n• ✅ Practice your elevator pitch\n\n**Technical Setup (15 mins):**\n• ✅ Test video call setup (camera, microphone, internet)\n• ✅ Choose appropriate attire\n• ✅ Ensure quiet environment\n\n**Final Review (15 mins):**\n• ✅ Review key talking points\n• ✅ Have resume and notes ready\n• ✅ Take a few deep breaths and relax!\n\n**Resources:**\n🔗 Job Posting: {{$json.source}}\n📄 Your Tailored Resume: Available in dashboard\n\n**Questions to Consider Asking:**\n• What does success look like in this role in the first 90 days?\n• What are the biggest challenges facing the team right now?\n• What opportunities for growth and learning are available?\n• How would you describe the company culture?\n\nGood luck! You've got this! 🍀\n\nBest regards,\nYour AI Job Assistant"
+      },
+      "id": "g7h8i9j0-interview-prep-email",
+      "name": "Send Interview Prep Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        680,
+        600
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "decision-timeout",
+        "options": {}
+      },
+      "id": "h8i9j0k1-decision-timeout-webhook",
+      "name": "Decision Timeout Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{new Date().getTime() - new Date($json.created_at).getTime()}}",
+              "operation": "larger",
+              "value2": 172800000
+            }
+          ]
+        }
+      },
+      "id": "i9j0k1l2-timeout-check-node",
+      "name": "Check 48h Timeout",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        460,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "tableId": "job_applications",
+        "id": "={{$json.id}}",
+        "keysUi": {
+          "keyValues": [
+            {
+              "key": "status",
+              "value": "Auto-Rejected (Timeout)"
+            }
+          ]
+        }
+      },
+      "id": "j0k1l2m3-auto-reject-node",
+      "name": "Auto-Reject After Timeout",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        680,
+        800
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "timeout@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "⏰ Jobs Auto-Rejected Due to Timeout",
+        "emailType": "html",
+        "message": "Hi Eric,\n\nThe following jobs have been automatically rejected due to 48-hour timeout:\n\n{{range($json)}}\n• {{$item.company}} - {{$item.role}}\n  Added: {{$item.created_at}}\n  AI Score: {{$item.ai_match_score}}/10\n{{/range}}\n\nTo avoid this in the future, please review jobs within 48 hours of discovery.\n\nYou can still manually review these jobs in your dashboard if interested.\n\nBest regards,\nYour AI Job Assistant"
+      },
+      "id": "k1l2m3n4-timeout-notification",
+      "name": "Send Timeout Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        900,
+        800
+      ]
+    }
+  ],
+  "connections": {
+    "Job Review Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Review Request Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Approval Webhook": {
+      "main": [
+        [
+          {
+            "node": "Send Resume Review Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interview Prep Webhook": {
+      "main": [
+        [
+          {
+            "node": "Schedule Interview Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Interview Prep": {
+      "main": [
+        [
+          {
+            "node": "Send Interview Prep Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Timeout Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check 48h Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check 48h Timeout": {
+      "main": [
+        [
+          {
+            "node": "Auto-Reject After Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Reject After Timeout": {
+      "main": [
+        [
+          {
+            "node": "Send Timeout Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 4,
+  "updatedAt": "2024-11-05T00:00:00.000Z",
+  "versionId": "1"
+}

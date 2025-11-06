@@ -1,0 +1,354 @@
+{
+  "name": "Automated Application Submission",
+  "nodes": [
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.status}}",
+              "value2": "Ready to Apply"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-1234-5678-9abc-def123456789",
+      "name": "Check Application Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "resource": "chat",
+        "operation": "message",
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert resume writer. Tailor the provided master resume to match the job requirements exactly. Keep the same format but emphasize relevant skills and experience."
+            },
+            {
+              "role": "user",
+              "content": "Master Resume: {{$env.MASTER_RESUME}}\n\nJob Description: {{$json.description}}\n\nTailor this resume for this specific role, highlighting relevant experience and skills."
+            }
+          ]
+        }
+      },
+      "id": "b2c3d4e5-2345-6789-abcd-ef1234567890",
+      "name": "AI Resume Tailoring",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "resource": "chat",
+        "operation": "message",
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert cover letter writer. Create a compelling, personalized cover letter that shows genuine interest in the company and role."
+            },
+            {
+              "role": "user",
+              "content": "Company: {{$json.company}}\nRole: {{$json.role}}\nJob Description: {{$json.description}}\nMy Background: Software Engineer with 5+ years in React/Node.js\n\nWrite a professional cover letter (300-400 words)."
+            }
+          ]
+        }
+      },
+      "id": "c3d4e5f6-3456-789a-bcde-f12345678901",
+      "name": "AI Cover Letter",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "tableId": "resume_versions",
+        "keysUi": {
+          "keyValues": [
+            {
+              "key": "job_id",
+              "value": "={{$json.id}}"
+            },
+            {
+              "key": "user_id",
+              "value": "={{$env.SUPABASE_USER_ID}}"
+            },
+            {
+              "key": "label",
+              "value": "Tailored for {{$json.company}} - {{$json.role}}"
+            },
+            {
+              "key": "resume_md",
+              "value": "={{$node['AI Resume Tailoring'].json.content}}"
+            },
+            {
+              "key": "cover_letter_md",
+              "value": "={{$node['AI Cover Letter'].json.content}}"
+            }
+          ]
+        }
+      },
+      "id": "d4e5f6g7-4567-89ab-cdef-123456789012",
+      "name": "Save Tailored Documents",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.source}}",
+              "operation": "contains",
+              "value2": "linkedin"
+            }
+          ]
+        }
+      },
+      "id": "e5f6g7h8-5678-9abc-def1-23456789abcd",
+      "name": "Check Application Method",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{$json.source}}",
+        "options": {
+          "waitUntil": "networkidle"
+        },
+        "jsCode": "// LinkedIn Easy Apply automation\nconst easyApplyButton = await page.$('[data-easy-apply-id]');\nif (easyApplyButton) {\n  await easyApplyButton.click();\n  \n  // Wait for modal\n  await page.waitForSelector('[data-test-modal]');\n  \n  // Upload resume if file input exists\n  const fileInput = await page.$('input[type=\"file\"]');\n  if (fileInput) {\n    await fileInput.uploadFile('/path/to/tailored-resume.pdf');\n  }\n  \n  // Fill in any required fields\n  const textAreas = await page.$$('textarea');\n  for (let textarea of textAreas) {\n    await textarea.fill('{{$node[\"AI Cover Letter\"].json.content}}');\n  }\n  \n  // Submit application\n  const submitButton = await page.$('[data-test-submit-application]');\n  if (submitButton) {\n    await submitButton.click();\n    return { success: true, method: 'linkedin_easy_apply' };\n  }\n}\nreturn { success: false, error: 'Easy Apply not available' };"
+      },
+      "id": "f6g7h8i9-6789-abcd-ef12-3456789abcde",
+      "name": "LinkedIn Easy Apply",
+      "type": "n8n-nodes-base.puppeteer",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "ekazee.careers@gmail.com",
+        "toEmail": "={{$json.email || 'hr@' + $json.company.toLowerCase().replace(' ', '') + '.com'}}",
+        "subject": "Application for {{$json.role}} Position",
+        "emailType": "html",
+        "message": "{{$node['AI Cover Letter'].json.content}}",
+        "attachments": [
+          {
+            "name": "Eric_Kazee_Resume_{{$json.company}}.pdf",
+            "content": "={{$node['AI Resume Tailoring'].json.content}}"
+          }
+        ]
+      },
+      "id": "g7h8i9j0-789a-bcde-f123-456789abcdef",
+      "name": "Email Application",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "tableId": "job_applications",
+        "id": "={{$json.id}}",
+        "keysUi": {
+          "keyValues": [
+            {
+              "key": "status",
+              "value": "Applied"
+            },
+            {
+              "key": "date_applied",
+              "value": "={{new Date().toISOString()}}"
+            }
+          ]
+        }
+      },
+      "id": "h8i9j0k1-89ab-cdef-1234-56789abcdef0",
+      "name": "Update Status to Applied",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "tableId": "application_events",
+        "keysUi": {
+          "keyValues": [
+            {
+              "key": "job_id",
+              "value": "={{$json.id}}"
+            },
+            {
+              "key": "user_id",
+              "value": "={{$env.SUPABASE_USER_ID}}"
+            },
+            {
+              "key": "type",
+              "value": "application_submitted"
+            },
+            {
+              "key": "payload",
+              "value": "={{JSON.stringify({ method: $node['Check Application Method'].json.success ? 'linkedin' : 'email', timestamp: new Date().toISOString() })}}"
+            }
+          ]
+        }
+      },
+      "id": "i9j0k1l2-9abc-def1-2345-6789abcdef01",
+      "name": "Log Application Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Check Application Status": {
+      "main": [
+        [
+          {
+            "node": "AI Resume Tailoring",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "AI Cover Letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Resume Tailoring": {
+      "main": [
+        [
+          {
+            "node": "Save Tailored Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Cover Letter": {
+      "main": [
+        [
+          {
+            "node": "Save Tailored Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Tailored Documents": {
+      "main": [
+        [
+          {
+            "node": "Check Application Method",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Application Method": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Easy Apply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Email Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Easy Apply": {
+      "main": [
+        [
+          {
+            "node": "Update Status to Applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Application": {
+      "main": [
+        [
+          {
+            "node": "Update Status to Applied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status to Applied": {
+      "main": [
+        [
+          {
+            "node": "Log Application Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2024-11-05T00:00:00.000Z",
+  "versionId": "1"
+}

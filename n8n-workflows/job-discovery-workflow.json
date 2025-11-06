@@ -1,0 +1,275 @@
+{
+  "name": "Job Discovery & Filtering",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "value": 24
+            }
+          ]
+        }
+      },
+      "id": "d1c3c4a6-8b2f-4e3a-9c7d-1e2f3a4b5c6d",
+      "name": "Daily Job Scan",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "requestMethod": "GET",
+        "url": "https://rapidapi.com/api/jobs",
+        "options": {
+          "headers": {
+            "X-RapidAPI-Key": "={{$env.RAPIDAPI_KEY}}",
+            "X-RapidAPI-Host": "jobs-search-realtime-data.p.rapidapi.com"
+          }
+        },
+        "queryParameters": {
+          "query": "software engineer",
+          "location": "Remote",
+          "experience": "mid",
+          "remote": "true"
+        }
+      },
+      "id": "e2d4d5b7-9c3f-5f4a-ad8e-2f3g4a5b6c7e",
+      "name": "Scrape Jobs - LinkedIn",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        460,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "requestMethod": "GET",
+        "url": "https://rapidapi.com/api/jobs/indeed",
+        "options": {
+          "headers": {
+            "X-RapidAPI-Key": "={{$env.RAPIDAPI_KEY}}"
+          }
+        },
+        "queryParameters": {
+          "query": "software engineer",
+          "location": "Remote",
+          "experience": "mid"
+        }
+      },
+      "id": "f3e5e6c8-ad4f-6g5b-be9f-3g4h5a6b7c8f",
+      "name": "Scrape Jobs - Indeed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [
+        460,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "resource": "chat",
+        "operation": "message",
+        "model": "gpt-4",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a job relevance analyzer. Rate jobs 1-10 based on match to: Software Engineer with 5+ years experience in React, Node.js, Python. Looking for $120k-180k remote roles at mid-size companies."
+            },
+            {
+              "role": "user",
+              "content": "Job Title: {{$json.title}}\nCompany: {{$json.company}}\nLocation: {{$json.location}}\nDescription: {{$json.description}}\n\nProvide only a numeric score 1-10 and brief reasoning."
+            }
+          ]
+        }
+      },
+      "id": "g4f6f7d9-be5g-7h6c-cf0g-4h5i6a7b8c9g",
+      "name": "AI Job Scoring",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$node['AI Job Scoring'].json.score}}",
+              "operation": "larger",
+              "value2": 7
+            }
+          ]
+        }
+      },
+      "id": "h5g7g8e0-cf6h-8i7d-dg1h-5i6j7a8b9c0h",
+      "name": "Filter High-Quality Jobs",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "insert",
+        "tableId": "job_applications",
+        "keysUi": {
+          "keyValues": [
+            {
+              "key": "company",
+              "value": "={{$json.company}}"
+            },
+            {
+              "key": "role",
+              "value": "={{$json.title}}"
+            },
+            {
+              "key": "location",
+              "value": "={{$json.location}}"
+            },
+            {
+              "key": "source",
+              "value": "={{$json.source_url}}"
+            },
+            {
+              "key": "description",
+              "value": "={{$json.description}}"
+            },
+            {
+              "key": "ai_match_score",
+              "value": "={{$node['AI Job Scoring'].json.score}}"
+            },
+            {
+              "key": "status",
+              "value": "To Review"
+            },
+            {
+              "key": "user_id",
+              "value": "={{$env.SUPABASE_USER_ID}}"
+            }
+          ]
+        }
+      },
+      "id": "i6h8h9f1-dg7i-9j8e-eh2i-6j7k8a9b0c1i",
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "smtp",
+        "fromEmail": "noreply@yourjobsearch.com",
+        "toEmail": "ekazee.careers@gmail.com",
+        "subject": "🎯 New High-Quality Jobs Found",
+        "emailType": "html",
+        "message": "Found {{$json.length}} new jobs matching your criteria:\n\n{{$json}}"
+      },
+      "id": "j7i9i0g2-eh8j-0k9f-fi3j-7k8l9a0b1c2j",
+      "name": "Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Job Scan": {
+      "main": [
+        [
+          {
+            "node": "Scrape Jobs - LinkedIn",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Scrape Jobs - Indeed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Jobs - LinkedIn": {
+      "main": [
+        [
+          {
+            "node": "AI Job Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scrape Jobs - Indeed": {
+      "main": [
+        [
+          {
+            "node": "AI Job Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Job Scoring": {
+      "main": [
+        [
+          {
+            "node": "Filter High-Quality Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High-Quality Jobs": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {},
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2024-11-05T00:00:00.000Z",
+  "versionId": "1"
+}
