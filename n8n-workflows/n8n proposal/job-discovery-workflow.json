@@ -1,0 +1,310 @@
+{
+  "name": "Job Discovery & Aggregation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "id": "001"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.apify.com/v2/acts/bebity~linkedin-jobs-scraper/runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "searchQueries",
+              "value": "=\"AI Adoption Specialist\", \"Legal Technology Manager\", \"AI Implementation Manager\", \"AI Training Manager\""
+            },
+            {
+              "name": "location",
+              "value": "United States"
+            },
+            {
+              "name": "remote",
+              "value": "true"
+            },
+            {
+              "name": "maxResults",
+              "value": "50"
+            }
+          ]
+        }
+      },
+      "name": "LinkedIn Jobs Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 200],
+      "id": "002"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://jsearch.p.rapidapi.com/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "AI adoption specialist legal technology remote USA"
+            },
+            {
+              "name": "num_pages",
+              "value": "3"
+            },
+            {
+              "name": "remote_jobs_only",
+              "value": "true"
+            },
+            {
+              "name": "employment_types",
+              "value": "FULLTIME"
+            }
+          ]
+        },
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-RapidAPI-Host",
+              "value": "jsearch.p.rapidapi.com"
+            }
+          ]
+        }
+      },
+      "name": "JSearch API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [450, 350],
+      "id": "003"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "name": "Merge Jobs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [650, 275],
+      "id": "004"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert job matching AI. Analyze job postings against Eric's profile and score them 1-10.\n\nEric's Profile:\n- 12+ years legal technology experience\n- 3+ years AI implementation (ChatGPT, Claude, legal AI tools)\n- Expertise: iManage, NetDocuments, LexisNexis, Aderant, MS365\n- Target: AI Adoption Specialist, Legal Tech Manager roles\n- Location: Remote from Texas\n- Salary: $100k+\n\nScoring Criteria:\n10: Perfect match - AI + Legal Tech, remote, senior role\n8-9: Strong match - Either AI or Legal Tech focus, remote\n6-7: Good match - Related field, transferable skills\n4-5: Possible match - Some relevant aspects\n1-3: Poor match - Limited relevance\n\nReturn JSON: {\"score\": X, \"match_reasons\": \"...\", \"red_flags\": \"...\"}"
+            },
+            {
+              "role": "user",
+              "content": "={{JSON.stringify($json)}}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.3
+        }
+      },
+      "name": "AI Job Scorer",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [850, 275],
+      "id": "005"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.score}}",
+              "operation": "largerEqual",
+              "value2": 7
+            }
+          ]
+        }
+      },
+      "name": "Filter High Scores",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 1,
+      "position": [1050, 275],
+      "id": "006"
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "job_opportunities",
+        "columns": "title, company, location, url, description, salary_range, remote, ai_score, match_reasons, source, discovered_at",
+        "additionalFields": {}
+      },
+      "name": "Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "id": "007"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM job_opportunities WHERE url = '{{$json.url}}' LIMIT 1"
+      },
+      "name": "Check Duplicates",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 150],
+      "id": "008"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.length}}",
+              "operation": "equal",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "name": "Is New Job?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 1,
+      "position": [1150, 150],
+      "id": "009"
+    },
+    {
+      "parameters": {
+        "subject": "New High-Score Job Opportunities Found",
+        "message": "Found {{$json.count}} new job opportunities scoring 7+:\n\n{{$json.jobs}}",
+        "toEmail": "ekazee@outlook.com"
+      },
+      "name": "Email Notification",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1450, 275],
+      "id": "010"
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "LinkedIn Jobs Scraper",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "JSearch API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LinkedIn Jobs Scraper": {
+      "main": [
+        [
+          {
+            "node": "Merge Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "JSearch API": {
+      "main": [
+        [
+          {
+            "node": "Merge Jobs",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Jobs": {
+      "main": [
+        [
+          {
+            "node": "AI Job Scorer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Job Scorer": {
+      "main": [
+        [
+          {
+            "node": "Filter High Scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter High Scores": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicates": {
+      "main": [
+        [
+          {
+            "node": "Is New Job?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Job?": {
+      "main": [
+        [
+          {
+            "node": "Save to Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,767 @@
+{
+  "name": "Application Tracker (Corrected)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hour",
+              "hour": 8
+            },
+            {
+              "field": "minute",
+              "minute": 0
+            }
+          ]
+        },
+        "timezone": "America/Chicago"
+      },
+      "id": "cron-daily",
+      "name": "Daily Check (8 AM CT)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "getAll",
+        "tableId": "job_applications",
+        "options": {
+          "queryName": "user_id",
+          "queryValue": "542413a9-b564-423c-96c9-99d51cc01107",
+          "additionalFields": {
+            "filters": "application_status=eq.Applied",
+            "orderBy": "updated_at.asc"
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "get-applied",
+      "name": "Get Applied Jobs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "getAll",
+        "tableId": "job_applications",
+        "options": {
+          "queryName": "user_id",
+          "queryValue": "542413a9-b564-423c-96c9-99d51cc01107",
+          "additionalFields": {
+            "orderBy": "updated_at.desc"
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "get-all",
+      "name": "Get All Applications",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items('Get Applied Jobs').length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-apps",
+      "name": "Applications Exist?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        620,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "split-apps",
+      "name": "Process Each Application",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        840,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst items = [];\nfor (const item of $input.all()) {\n  const appliedDate = new Date(item.json.updated_at || item.json.created_at || new Date());\n  const today = new Date();\n  const daysDiff = Math.floor((today - appliedDate) / (1000*60*60*24));\n  let followupStage = 'none';\n  let followupType = 'none';\n  let shouldFollowup = false;\n  if (daysDiff >= 6 && daysDiff <= 8) {\n    followupStage = 'week_1';\n    followupType = 'initial';\n    shouldFollowup = true;\n  } else if (daysDiff >= 13 && daysDiff <= 15) {\n    followupStage = 'week_2';\n    followupType = 'reminder';\n    shouldFollowup = true;\n  } else if (daysDiff >= 20 && daysDiff <= 22) {\n    followupStage = 'week_3';\n    followupType = 'final';\n    shouldFollowup = true;\n  }\n  const metadata = item.json.metadata || {};\n  if (metadata.last_followup_stage === followupStage) {\n    shouldFollowup = false;\n  }\n  items.push({\n    json: {\n      ...item.json,\n      days_since_applied: daysDiff,\n      followup_stage: followupStage,\n      followup_type: followupType,\n      should_followup: shouldFollowup,\n      followup_count: metadata.followup_count || 0,\n      metadata\n    }\n  });\n}\nreturn items;\n"
+      },
+      "id": "calc-followup",
+      "name": "Calculate Follow-up",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_followup }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-followup",
+      "name": "Needs Follow-up?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You craft professional follow-up emails for job applications. Keep tone polite and stage-appropriate."
+            },
+            {
+              "role": "user",
+              "content": "Company: {{ $json.company }}\nRole: {{ $json.title }}\nDays Since Applied: {{ $json.days_since_applied }}\nFollow-up Type: {{ $json.followup_type }}\n\nWrite the follow-up email body."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 800
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "Nxhi8S379cY9Cz7s",
+          "name": "Anthropic Claude"
+        }
+      },
+      "id": "ai-followup",
+      "name": "Claude Follow-up Email",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ 'hr@' + $json.company.toLowerCase().replace(/[^a-z0-9]/g,'') + '.com' }}",
+        "subject": "Following up on {{ $json.title }} Application - Eric Kazee",
+        "emailType": "text",
+        "message": "={{ $json.content }}\n\nBest regards,\nEric Kazee\nekazee.careers@gmail.com\n214-728-0973",
+        "options": {
+          "ccEmails": "ekazee.careers@gmail.com"
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "send-followup",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "update",
+        "tableId": "job_applications",
+        "filterType": "manual",
+        "filtersUi": {
+          "filterValues": [
+            {
+              "key": "id",
+              "condition": "equals",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "metadata",
+              "fieldValue": "={{ Object.assign($json.metadata || {}, { last_followup_stage: $json.followup_stage, last_followup_date: $now, followup_count: ($json.followup_count || 0) + 1 }) }}"
+            },
+            {
+              "fieldName": "updated_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "update-followup",
+      "name": "Update Follow-up Metadata",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1940,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "after-followup",
+      "name": "After Follow-up",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 20,
+        "filters": {
+          "q": "={{ 'from:(' + $json.company.toLowerCase() + ') OR subject:(\"' + $json.title + '\") newer_than:7d' }}"
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "gmail-search",
+      "name": "Scan Gmail Responses",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst baseItems = $items('Calculate Follow-up');\nreturn $input.all().map((item, index) => {\n  const pairedIndex = item.pairedItem?.item ?? index;\n  const base = baseItems[pairedIndex]?.json || {};\n  return {\n    json: {\n      ...item.json,\n      job_id: base.id,\n      job_metadata: base.metadata || {},\n      job_company: base.company,\n      job_title: base.title\n    }\n  };\n});\n"
+      },
+      "id": "attach-context",
+      "name": "Attach Job Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items('Attach Job Context').length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-responses",
+      "name": "Responses Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2820,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "split-responses",
+      "name": "Process Each Response",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "Classify the email response and extract actionable details. Return JSON only."
+            },
+            {
+              "role": "user",
+              "content": "Email Subject: {{ $json.subject }}\nEmail Body: {{ $json.snippet }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 500
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "Nxhi8S379cY9Cz7s",
+          "name": "Anthropic Claude"
+        }
+      },
+      "id": "claude-classify",
+      "name": "Claude Response Classifier",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        3260,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst classification = JSON.parse($json.content || '{}');\nlet newStatus = 'In Review';\nif (classification.classification === 'INTERVIEW_INVITE') newStatus = 'Interview Scheduled';\nelse if (classification.classification === 'REJECTION') newStatus = 'Rejected';\nelse if (classification.classification === 'REQUEST_INFO') newStatus = 'Info Requested';\nelse if (classification.classification === 'AUTO_REPLY') newStatus = 'Applied';\nreturn [{\n  json: {\n    job_id: $json.job_id,\n    job_metadata: $json.job_metadata,\n    classification,\n    new_status: newStatus\n  }\n}];\n"
+      },
+      "id": "map-status",
+      "name": "Map Classification",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3480,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "update",
+        "tableId": "job_applications",
+        "filterType": "manual",
+        "filtersUi": {
+          "filterValues": [
+            {
+              "key": "id",
+              "condition": "equals",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "application_status",
+              "fieldValue": "={{ $json.new_status }}"
+            },
+            {
+              "fieldName": "metadata",
+              "fieldValue": "={{ Object.assign($json.job_metadata || {}, { last_response_classification: $json.classification, last_response_date: $now }) }}"
+            },
+            {
+              "fieldName": "updated_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "update-status",
+      "name": "Update Application Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3700,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "application-complete",
+      "name": "Application Processed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        3920,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst apps = $items('Get All Applications');\nconst stats = {\n  total_applications: apps.length,\n  applied: 0,\n  interview_scheduled: 0,\n  in_review: 0,\n  rejected: 0,\n  info_requested: 0,\n  follow_ups_sent: 0\n};\nconst sourceBreakdown = {};\nconst recentActivity = [];\nconst weekAgo = new Date();\nweekAgo.setDate(weekAgo.getDate() - 7);\napps.forEach(item => {\n  const data = item.json;\n  const status = (data.application_status || '').toLowerCase();\n  if (status === 'applied') stats.applied++;\n  if (status.includes('interview')) stats.interview_scheduled++;\n  if (status === 'in review') stats.in_review++;\n  if (status === 'rejected') stats.rejected++;\n  if (status === 'info requested') stats.info_requested++;\n  const metadata = data.metadata || {};\n  if (metadata.followup_count) stats.follow_ups_sent += metadata.followup_count;\n  const source = data.source || 'Unknown';\n  sourceBreakdown[source] = (sourceBreakdown[source] || 0) + 1;\n  const updated = new Date(data.updated_at || data.created_at || new Date());\n  if (updated >= weekAgo) {\n    recentActivity.push(`${data.company} (${data.title}) - ${data.application_status}`);\n  }\n});\nconst report = `\ud83d\udcca Weekly Application Tracker\n\nTotal Applications: ${stats.total_applications}\nApplied: ${stats.applied}\nInterviews Scheduled: ${stats.interview_scheduled}\nIn Review: ${stats.in_review}\nInfo Requested: ${stats.info_requested}\nRejected: ${stats.rejected}\nFollow-ups Sent: ${stats.follow_ups_sent}\n\nTop Sources:\n${Object.entries(sourceBreakdown).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([src,count])=>`\u2022 ${src}: ${count}`).join('\n') || '\u2022 No data'}\n\nRecent Activity:\n${recentActivity.slice(0,10).map(entry=>`\u2022 ${entry}`).join('\n') || '\u2022 No updates in last 7 days'}\n\nGenerated: ${new Date().toLocaleString()}`;\nreturn [{ json: { report } }];\n"
+      },
+      "id": "report",
+      "name": "Generate Weekly Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        620,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "ekazee.careers@gmail.com",
+        "subject": "\ud83d\udcca Weekly Application Tracker - {{ $now.format('MMMM Do, YYYY') }}",
+        "emailType": "text",
+        "message": "={{ $json.report }}"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "send-report",
+      "name": "Send Weekly Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        840,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Check (8 AM CT)": {
+      "main": [
+        [
+          {
+            "node": "Get Applied Jobs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get All Applications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Applied Jobs": {
+      "main": [
+        [
+          {
+            "node": "Applications Exist?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Applications Exist?": {
+      "main": [
+        [
+          {
+            "node": "Process Each Application",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Application Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Application": {
+      "main": [
+        [
+          {
+            "node": "Calculate Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Application Processed",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Calculate Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Needs Follow-up?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Follow-up?": {
+      "main": [
+        [
+          {
+            "node": "Claude Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "After Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Send Follow-up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [
+          {
+            "node": "Update Follow-up Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Follow-up Metadata": {
+      "main": [
+        [
+          {
+            "node": "After Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "After Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Scan Gmail Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan Gmail Responses": {
+      "main": [
+        [
+          {
+            "node": "Attach Job Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Attach Job Context": {
+      "main": [
+        [
+          {
+            "node": "Responses Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Responses Found?": {
+      "main": [
+        [
+          {
+            "node": "Process Each Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Application Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Response": {
+      "main": [
+        [
+          {
+            "node": "Claude Response Classifier",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Application Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Response Classifier": {
+      "main": [
+        [
+          {
+            "node": "Map Classification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Classification": {
+      "main": [
+        [
+          {
+            "node": "Update Application Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Application Status": {
+      "main": [
+        [
+          {
+            "node": "Process Each Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Application Processed": {
+      "main": [
+        [
+          {
+            "node": "Process Each Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Applications": {
+      "main": [
+        [
+          {
+            "node": "Generate Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "staticData": {},
+  "meta": {
+    "instanceId": "n8n-local"
+  },
+  "id": "application-tracker-corrected",
+  "tags": []
+}

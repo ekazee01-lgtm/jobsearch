@@ -56,11 +56,102 @@
                 </div>
             </section>
 
+            <!-- Alerts and Notifications -->
+            <div id="alerts-section" class="alerts-section" style="display: none;">
+                <div class="alert-group">
+                    <h3>🔔 Follow-up Reminders</h3>
+                    <div id="follow-up-alerts"></div>
+                </div>
+                <div class="alert-group">
+                    <h3>⚠️ Deadline Alerts</h3>
+                    <div id="deadline-alerts"></div>
+                </div>
+            </div>
+
             <!-- Action Buttons -->
             <div class="action-buttons">
                 <button id="add-job-btn" class="btn-primary">+ Add New Job</button>
                 <button id="setup-ai-btn" class="btn-secondary">🤖 Setup AI Features</button>
                 <button id="manage-resume-btn" class="btn-secondary">📄 Manage Resume</button>
+                <button id="toggle-filters-btn" class="btn-secondary">🔍 Filters</button>
+                <button id="columns-btn" class="btn-secondary">📊 Columns</button>
+                <button id="bulk-actions-btn" class="btn-secondary" disabled>Bulk Actions</button>
+            </div>
+
+            <!-- Filters Panel -->
+            <div id="filters-panel" class="filters-panel" style="display: none;">
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label for="filter-excitement">Excitement Level</label>
+                        <select id="filter-excitement">
+                            <option value="">All levels</option>
+                            <option value="5">⭐⭐⭐⭐⭐ Dream Job</option>
+                            <option value="4">⭐⭐⭐⭐ Very Interested</option>
+                            <option value="3">⭐⭐⭐ Interested</option>
+                            <option value="2">⭐⭐ Some Interest</option>
+                            <option value="1">⭐ Low Interest</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-min-salary">Min Salary</label>
+                        <input type="number" id="filter-min-salary" placeholder="50000" step="10000">
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-deadline">Deadline</label>
+                        <select id="filter-deadline">
+                            <option value="">All deadlines</option>
+                            <option value="overdue">Overdue</option>
+                            <option value="today">Due today</option>
+                            <option value="week">This week</option>
+                            <option value="month">This month</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="filter-company">Company</label>
+                        <input type="text" id="filter-company" placeholder="Search companies...">
+                    </div>
+                </div>
+                <div class="filter-actions">
+                    <button id="apply-filters-btn" class="btn-primary">Apply Filters</button>
+                    <button id="clear-filters-btn" class="btn-secondary">Clear All</button>
+                </div>
+            </div>
+
+            <!-- Columns Customization Panel -->
+            <div id="columns-panel" class="filters-panel" style="display: none;">
+                <h3>Customize Display Columns</h3>
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-salary" checked> Salary Range</label>
+                    </div>
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-excitement" checked> Excitement Level</label>
+                    </div>
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-deadline" checked> Deadline Warnings</label>
+                    </div>
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-applied-date" checked> Applied Date</label>
+                    </div>
+                </div>
+                <div class="filter-row">
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-follow-up" checked> Follow-up Indicators</label>
+                    </div>
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-ai-match" checked> AI Match Score</label>
+                    </div>
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-source" checked> Job Source</label>
+                    </div>
+                    <div class="filter-group">
+                        <label><input type="checkbox" id="show-location" checked> Location</label>
+                    </div>
+                </div>
+                <div class="filter-actions">
+                    <button id="apply-columns-btn" class="btn-primary">Apply Changes</button>
+                    <button id="reset-columns-btn" class="btn-secondary">Reset to Default</button>
+                </div>
             </div>
 
             <!-- Job Pipeline (Kanban) -->
@@ -94,6 +185,21 @@
                     <h3>🎉 Offer <span class="count">0</span></h3>
                     <div class="job-cards" id="offer-cards"></div>
                 </div>
+
+                <div class="pipeline-column" data-status="negotiating">
+                    <h3>💰 Negotiating <span class="count">0</span></h3>
+                    <div class="job-cards" id="negotiating-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="accepted">
+                    <h3>✅ Accepted <span class="count">0</span></h3>
+                    <div class="job-cards" id="accepted-cards"></div>
+                </div>
+
+                <div class="pipeline-column" data-status="rejected">
+                    <h3>❌ Rejected <span class="count">0</span></h3>
+                    <div class="job-cards" id="rejected-cards"></div>
+                </div>
             </section>
         </div>
     </main>
@@ -121,16 +227,66 @@
                 <label for="job-url">Job Posting URL</label>
                 <input type="url" id="job-url" placeholder="https://...">
 
-                <label for="status">Status *</label>
-                <select id="status" required>
-                    <option value="To Review">To Review</option>
-                    <option value="Bookmarked">Bookmarked</option>
-                    <option value="Applying">Applying</option>
-                    <option value="Applied">Applied</option>
-                    <option value="Interview">Interview</option>
-                    <option value="Offer">Offer</option>
-                    <option value="Rejected">Rejected</option>
-                </select>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="min-salary">Min. Salary</label>
+                        <input type="number" id="min-salary" placeholder="50000" step="1000">
+                    </div>
+                    <div class="form-group">
+                        <label for="max-salary">Max. Salary</label>
+                        <input type="number" id="max-salary" placeholder="100000" step="1000">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="date-applied">Date Applied</label>
+                        <input type="date" id="date-applied">
+                    </div>
+                    <div class="form-group">
+                        <label for="deadline">Application Deadline</label>
+                        <input type="date" id="deadline">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="excitement">Excitement Level</label>
+                        <select id="excitement">
+                            <option value="">Select level...</option>
+                            <option value="1">⭐ Low Interest</option>
+                            <option value="2">⭐⭐ Some Interest</option>
+                            <option value="3">⭐⭐⭐ Interested</option>
+                            <option value="4">⭐⭐⭐⭐ Very Interested</option>
+                            <option value="5">⭐⭐⭐⭐⭐ Dream Job</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="status">Status *</label>
+                        <select id="status" required>
+                            <option value="To Review">To Review</option>
+                            <option value="Bookmarked">Bookmarked</option>
+                            <option value="Applying">Applying</option>
+                            <option value="Applied">Applied</option>
+                            <option value="Interview">Interview</option>
+                            <option value="Offer">Offer</option>
+                            <option value="Negotiating">Negotiating</option>
+                            <option value="Accepted">Accepted</option>
+                            <option value="Rejected">Rejected</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="follow-up-date">Follow-up Date</label>
+                        <input type="date" id="follow-up-date">
+                    </div>
+                    <div class="form-group">
+                        <label for="follow-up-notes">Follow-up Notes</label>
+                        <input type="text" id="follow-up-notes" placeholder="Reminder for follow-up...">
+                    </div>
+                </div>
 
                 <label for="description">Job Description / Notes</label>
                 <textarea id="description" rows="6" placeholder="Paste job description, requirements, notes..."></textarea>
@@ -237,6 +393,40 @@ I am writing to express my interest in..."></textarea>
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary" onclick="closeApplicationPreview()">Close</button>
                     <button type="button" class="btn-primary" onclick="copyToClipboard()">📋 Copy All to Clipboard</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Actions Modal -->
+    <div id="bulk-actions-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeBulkActionsModal()">&times;</span>
+            <h2>Bulk Actions</h2>
+            <p>Selected <span id="selected-count">0</span> job(s)</p>
+
+            <div class="bulk-action-buttons">
+                <button class="btn-primary" onclick="bulkChangeStatus()">Change Status</button>
+                <button class="btn-secondary" onclick="bulkDelete()">Delete Selected</button>
+                <button class="btn-secondary" onclick="bulkExport()">Export Selected</button>
+            </div>
+
+            <div id="bulk-status-selection" style="display: none;">
+                <label for="bulk-status">New Status:</label>
+                <select id="bulk-status">
+                    <option value="To Review">To Review</option>
+                    <option value="Bookmarked">Bookmarked</option>
+                    <option value="Applying">Applying</option>
+                    <option value="Applied">Applied</option>
+                    <option value="Interview">Interview</option>
+                    <option value="Offer">Offer</option>
+                    <option value="Negotiating">Negotiating</option>
+                    <option value="Accepted">Accepted</option>
+                    <option value="Rejected">Rejected</option>
+                </select>
+                <div class="modal-actions">
+                    <button class="btn-secondary" onclick="cancelBulkStatusChange()">Cancel</button>
+                    <button class="btn-primary" onclick="confirmBulkStatusChange()">Apply to Selected</button>
                 </div>
             </div>
         </div>

@@ -1,0 +1,435 @@
+{
+  "name": "Human Approval Gates",
+  "nodes": [
+    {
+      "parameters": {
+        "webhookUri": "job-review"
+      },
+      "name": "Job Review Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "301"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT * FROM job_opportunities WHERE ai_score BETWEEN 6 AND 7 AND status = 'review_required'"
+      },
+      "name": "Get Borderline Jobs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "id": "302"
+    },
+    {
+      "parameters": {
+        "mode": "humanInTheLoop",
+        "respondTo": "webhook",
+        "webhookUri": "approve-job",
+        "options": {
+          "message": "Review Job Opportunity",
+          "fields": [
+            {
+              "name": "decision",
+              "type": "select",
+              "label": "Decision",
+              "options": [
+                {
+                  "name": "Apply Now",
+                  "value": "apply"
+                },
+                {
+                  "name": "Save for Later",
+                  "value": "save"
+                },
+                {
+                  "name": "Reject",
+                  "value": "reject"
+                }
+              ]
+            },
+            {
+              "name": "priority",
+              "type": "select",
+              "label": "Priority Level",
+              "options": [
+                {
+                  "name": "High",
+                  "value": "high"
+                },
+                {
+                  "name": "Medium",
+                  "value": "medium"
+                },
+                {
+                  "name": "Low",
+                  "value": "low"
+                }
+              ]
+            },
+            {
+              "name": "notes",
+              "type": "text",
+              "label": "Notes"
+            },
+            {
+              "name": "customStrategy",
+              "type": "text",
+              "label": "Custom Application Strategy"
+            }
+          ],
+          "expiry": "48h"
+        }
+      },
+      "name": "Human Review",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "id": "303"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.decision}}",
+              "operation": "equals",
+              "value2": "apply"
+            }
+          ]
+        }
+      },
+      "name": "Decision Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "id": "304",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "table": "job_opportunities",
+        "updateKey": "id",
+        "columns": "status, priority, human_notes",
+        "additionalFields": {
+          "status": "pending",
+          "priority": "={{$json.priority}}",
+          "human_notes": "={{$json.notes}}"
+        }
+      },
+      "name": "Update to Apply",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "id": "305"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "table": "job_opportunities",
+        "updateKey": "id",
+        "columns": "status, priority",
+        "additionalFields": {
+          "status": "saved",
+          "priority": "={{$json.priority}}"
+        }
+      },
+      "name": "Save for Later",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "id": "306"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "table": "job_opportunities",
+        "updateKey": "id",
+        "columns": "status",
+        "additionalFields": {
+          "status": "rejected"
+        }
+      },
+      "name": "Reject Job",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "id": "307"
+    },
+    {
+      "parameters": {
+        "webhookUri": "resume-approval"
+      },
+      "name": "Resume Approval Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 550],
+      "id": "308"
+    },
+    {
+      "parameters": {
+        "mode": "humanInTheLoop",
+        "respondTo": "webhook",
+        "webhookUri": "approve-resume",
+        "options": {
+          "message": "Approve Resume & Cover Letter",
+          "fields": [
+            {
+              "name": "resumeApproved",
+              "type": "boolean",
+              "label": "Approve Resume?"
+            },
+            {
+              "name": "coverLetterApproved",
+              "type": "boolean",
+              "label": "Approve Cover Letter?"
+            },
+            {
+              "name": "resumeEdits",
+              "type": "text",
+              "label": "Resume Changes Required"
+            },
+            {
+              "name": "coverLetterEdits",
+              "type": "text",
+              "label": "Cover Letter Changes Required"
+            },
+            {
+              "name": "additionalDocs",
+              "type": "text",
+              "label": "Additional Documents Needed"
+            }
+          ],
+          "expiry": "24h"
+        }
+      },
+      "name": "Document Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [450, 550],
+      "id": "309"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Process approval and determine next steps\nconst approval = $input.item.json;\nlet nextStep = 'submit';\n\nif (!approval.resumeApproved || !approval.coverLetterApproved) {\n  nextStep = 'revise';\n}\n\nif (approval.additionalDocs) {\n  nextStep = 'prepare_additional';\n}\n\nreturn {\n  ...approval,\n  nextStep,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "name": "Process Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 550],
+      "id": "310"
+    },
+    {
+      "parameters": {
+        "webhookUri": "interview-prep"
+      },
+      "name": "Interview Prep Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 750],
+      "id": "311"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT * FROM job_opportunities WHERE id = '{{$json.jobId}}'"
+      },
+      "name": "Get Job Details",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 750],
+      "id": "312"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "Generate comprehensive interview preparation for Eric Kazee.\n\nInclude:\n1. Company research summary\n2. Role-specific technical questions\n3. Behavioral questions (STAR format)\n4. Questions to ask interviewer\n5. Key talking points from Eric's experience\n\nFocus on:\n- Legal technology expertise\n- AI implementation experience\n- Training and adoption success\n- Remote work capabilities"
+            },
+            {
+              "role": "user",
+              "content": "Company: {{$json.company}}\nPosition: {{$json.title}}\nJob Description: {{$json.description}}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "name": "Generate Interview Prep",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [650, 750],
+      "id": "313"
+    },
+    {
+      "parameters": {
+        "toEmail": "ekazee@outlook.com",
+        "subject": "Interview Prep: {{$json.company}} - {{$json.title}}",
+        "message": "Interview preparation document attached.\n\n{{$json.prepSummary}}\n\nGood luck!",
+        "attachments": "={{$json.prepDocument}}",
+        "options": {
+          "priority": "high"
+        }
+      },
+      "name": "Send Prep Materials",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [850, 750],
+      "id": "314"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "interview_prep",
+        "columns": "job_id, prep_date, materials_sent, interview_date",
+        "additionalFields": {}
+      },
+      "name": "Log Interview Prep",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 750],
+      "id": "315"
+    }
+  ],
+  "connections": {
+    "Job Review Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Borderline Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Borderline Jobs": {
+      "main": [
+        [
+          {
+            "node": "Human Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Review": {
+      "main": [
+        [
+          {
+            "node": "Decision Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Router": {
+      "main": [
+        [
+          {
+            "node": "Update to Apply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save for Later",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Approval Webhook": {
+      "main": [
+        [
+          {
+            "node": "Document Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Document Approval": {
+      "main": [
+        [
+          {
+            "node": "Process Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Interview Prep Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Job Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Details": {
+      "main": [
+        [
+          {
+            "node": "Generate Interview Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Interview Prep": {
+      "main": [
+        [
+          {
+            "node": "Send Prep Materials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Prep Materials": {
+      "main": [
+        [
+          {
+            "node": "Log Interview Prep",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

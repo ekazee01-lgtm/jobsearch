@@ -1,0 +1,739 @@
+{
+  "name": "Network Intelligence (Corrected)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minute",
+              "minute": 10
+            }
+          ]
+        },
+        "timezone": "America/Chicago"
+      },
+      "id": "cron-highscore",
+      "name": "Poll High-Score Jobs (10m)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "getAll",
+        "tableId": "job_applications",
+        "options": {
+          "queryName": "user_id",
+          "queryValue": "542413a9-b564-423c-96c9-99d51cc01107",
+          "additionalFields": {
+            "filters": "ai_score=gte.8,application_status=in.(discovered,to_review)",
+            "orderBy": "ai_score.desc",
+            "limit": "5"
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "get-highscore",
+      "name": "Get High-Score Jobs (8+)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items('Get High-Score Jobs (8+)').length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-jobs",
+      "name": "High-Score Jobs Exist?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "split-jobs",
+      "name": "Process Each Job",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nreturn $input.all().map(item => ({\n  json: {\n    job: item.json,\n    job_id: item.json.id,\n    company_slug: item.json.company.toLowerCase().replace(/[^a-z0-9]/g, '-'),\n    title_slug: encodeURIComponent(item.json.title.split(' ').slice(0,3).join(' '))\n  }\n}));\n"
+      },
+      "id": "prepare-job",
+      "name": "Prepare Job Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.crunchbase.com/organization/{{ $json.job.company.toLowerCase().replace(/[^a-z0-9]/g, '-') }}",
+        "waitUntil": "networkidle",
+        "stealth": true,
+        "actions": [
+          {
+            "type": "wait",
+            "value": 3000
+          },
+          {
+            "type": "evaluate",
+            "code": "() => {\n  const info = {\n    name: document.querySelector('h1')?.textContent?.trim() || '',\n    description: document.querySelector('[data-cy=\"description\"]')?.textContent?.trim() || '',\n    industry: document.querySelector('[data-cy=\"industry\"]')?.textContent?.trim() || '',\n    size: document.querySelector('[data-cy=\"num_employees_enum\"]')?.textContent?.trim() || '',\n    location: document.querySelector('[data-cy=\"location\"]')?.textContent?.trim() || '',\n    website: document.querySelector('a[href^=\"http\"]')?.href || ''\n  };\n  return info;\n}"
+          }
+        ]
+      },
+      "id": "crunchbase",
+      "name": "Research Company (Crunchbase)",
+      "type": "n8n-nodes-base.playwright",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.apollo.io/companies/{{ $json.job.company.toLowerCase().replace(/[^a-z0-9]/g, '-') }}",
+        "waitUntil": "domcontentloaded",
+        "stealth": true,
+        "actions": [
+          {
+            "type": "wait",
+            "value": 3000
+          },
+          {
+            "type": "evaluate",
+            "code": "() => {\n  const employees = [];\n  document.querySelectorAll('.css-employee-card, .search-result, [data-testid=\"person\"]').forEach((card, idx) => {\n    if (idx < 15) {\n      const name = card.querySelector('h3, .name')?.textContent?.trim() || '';\n      const title = card.querySelector('.title, .role')?.textContent?.trim() || '';\n      const profile = card.querySelector('a')?.href || '';\n      const email = card.querySelector('[href^=\"mailto:\"]')?.href?.replace('mailto:', '') || '';\n      if (name && title) {\n        employees.push({ name, title, profile_url: profile, email });\n      }\n    }\n  });\n  return employees.length ? employees : [{ name: 'Hiring Manager', title: 'Talent Acquisition', profile_url: '', email: '' }];\n}"
+          }
+        ]
+      },
+      "id": "directory",
+      "name": "Find Employees (Directory)",
+      "type": "n8n-nodes-base.playwright",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst job = $json.job;\nconst companyInfo = $node['Research Company (Crunchbase)'].json || {};\nconst employeeData = $node['Find Employees (Directory)'].json || [];\nconst insights = {\n  company_name: companyInfo.name || job.company,\n  industry: companyInfo.industry || 'Technology',\n  company_size: companyInfo.size || 'Unknown',\n  location: companyInfo.location || '',\n  description: companyInfo.description || '',\n  website: companyInfo.website || job.url,\n  strategy: companyInfo.size && companyInfo.size.includes('1-50') ? 'founder_direct' : 'hiring_managers'\n};\nreturn [{ json: { job, insights, employees: employeeData } }];\n"
+      },
+      "id": "combine",
+      "name": "Compile Company Insights",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nreturn $input.all().map(item => ({\n  json: {\n    job: item.json.job,\n    insights: item.json.insights,\n    summary_context: {\n      job_id: item.json.job.id,\n      company: item.json.job.company,\n      title: item.json.job.title,\n      ai_score: item.json.job.ai_score,\n      url: item.json.job.url,\n      insights: item.json.insights\n    }\n  }\n}));\n"
+      },
+      "id": "summary-context",
+      "name": "Prepare Summary Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst items = [];\nconst job = $json.job;\nconst insights = $json.insights;\nconst employees = $json.employees || [];\nemployees.forEach(emp => {\n  items.push({\n    json: {\n      job,\n      insights,\n      employee: emp\n    }\n  });\n});\nif (!employees.length) {\n  items.push({ json: { job, insights, employee: { name: 'Hiring Manager', title: job.title, profile_url: '', email: '' } } });\n}\nreturn items;\n"
+      },
+      "id": "fanout-employees",
+      "name": "Prepare Employee Items",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "split-employees",
+      "name": "Process Each Employee",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        1940,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst employee = $json.employee;\nconst job = $json.job;\nconst insights = $json.insights;\nlet score = 0;\nconst title = employee.title.toLowerCase();\nif (title.includes('hiring') || title.includes('talent')) score += 9;\nif (title.includes('manager') || title.includes('director')) score += 6;\nif (title.includes('lead') || title.includes('head')) score += 4;\nif (title.includes('engineer')) score += 3;\nif (insights.strategy === 'founder_direct' && (title.includes('founder') || title.includes('ceo'))) score += 8;\nif (employee.email) score += 3;\nreturn [{ json: { job, insights, employee, relevance_score: score } }];\n"
+      },
+      "id": "score-contact",
+      "name": "Score Contact",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.relevance_score }}",
+              "operation": "larger",
+              "value2": 5
+            }
+          ]
+        }
+      },
+      "id": "if-qualified",
+      "name": "High-Quality Contact?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "create",
+        "tableId": "networking_contacts",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "user_id",
+              "fieldValue": "542413a9-b564-423c-96c9-99d51cc01107"
+            },
+            {
+              "fieldName": "name",
+              "fieldValue": "={{ $json.employee.name }}"
+            },
+            {
+              "fieldName": "title",
+              "fieldValue": "={{ $json.employee.title }}"
+            },
+            {
+              "fieldName": "company",
+              "fieldValue": "={{ $json.job.company }}"
+            },
+            {
+              "fieldName": "email",
+              "fieldValue": "={{ $json.employee.email }}"
+            },
+            {
+              "fieldName": "notes",
+              "fieldValue": "={{ 'Relevance score: ' + $json.relevance_score }}"
+            },
+            {
+              "fieldName": "metadata",
+              "fieldValue": "={{ { job_id: $json.job.id, profile_url: $json.employee.profile_url, relevance_score: $json.relevance_score, strategy: $json.insights.strategy } }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "save-contact",
+      "name": "Save Networking Contact",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "contact-noop",
+      "name": "Contact Processed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2820,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "employees-complete",
+      "name": "Employees Complete",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "wait"
+      },
+      "id": "merge-summary",
+      "name": "Merge Summary Trigger",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        2380,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "getAll",
+        "tableId": "networking_contacts",
+        "options": {
+          "additionalFields": {
+            "filters": "={{ 'job_id=eq.' + $json.summary_context.job_id }}",
+            "orderBy": "relevance_score.desc"
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "fetch-contacts",
+      "name": "Get Contacts for Job",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst ctx = $json.summary_context;\nconst contacts = $items('Get Contacts for Job');\nconst rows = contacts.map(item => {\n  const data = item.json;\n  return `<tr><td>${data.name}</td><td>${data.title}</td><td>${data.metadata?.relevance_score || ''}</td><td>${data.email ? '\u2705' : '\u274c'}</td><td>${data.metadata?.strategy || ''}</td></tr>`;\n}).join('') || '<tr><td colspan=\"5\">No contacts saved yet</td></tr>';\nconst html = `\n<h2>Network Intelligence Report</h2>\n<p><strong>Company:</strong> ${ctx.company}</p>\n<p><strong>Role:</strong> ${ctx.title}</p>\n<p><strong>AI Score:</strong> ${ctx.ai_score}</p>\n<p><strong>Strategy:</strong> ${ctx.insights.strategy}</p>\n<table border=\"1\" cellpadding=\"6\" cellspacing=\"0\">\n<tr><th>Name</th><th>Title</th><th>Score</th><th>Email</th><th>Strategy</th></tr>\n${rows}\n</table>`;\nreturn [{ json: { html_report: html, context: ctx } }];\n"
+      },
+      "id": "build-report",
+      "name": "Build Intelligence Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2820,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "ekazee.careers@gmail.com",
+        "subject": "\ud83d\udd17 Network Intelligence: {{ $json.context.company }}",
+        "emailType": "html",
+        "message": "={{ $json.html_report }}"
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "send-report",
+      "name": "Send Intelligence Summary",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "job-complete",
+      "name": "Job Complete",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        3260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "no-jobs",
+      "name": "No High-Score Jobs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "wait"
+      },
+      "id": "merge-insights",
+      "name": "Merge Company Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Poll High-Score Jobs (10m)": {
+      "main": [
+        [
+          {
+            "node": "Get High-Score Jobs (8+)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get High-Score Jobs (8+)": {
+      "main": [
+        [
+          {
+            "node": "High-Score Jobs Exist?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High-Score Jobs Exist?": {
+      "main": [
+        [
+          {
+            "node": "Process Each Job",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No High-Score Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Job": {
+      "main": [
+        [
+          {
+            "node": "Prepare Job Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Job Complete",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Prepare Job Context": {
+      "main": [
+        [
+          {
+            "node": "Research Company (Crunchbase)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Employees (Directory)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Company (Crunchbase)": {
+      "main": [
+        [
+          {
+            "node": "Merge Company Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Employees (Directory)": {
+      "main": [
+        [
+          {
+            "node": "Merge Company Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Compile Company Insights": {
+      "main": [
+        [
+          {
+            "node": "Prepare Summary Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Prepare Employee Items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Summary Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Summary Trigger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Employee Items": {
+      "main": [
+        [
+          {
+            "node": "Process Each Employee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Employee": {
+      "main": [
+        [
+          {
+            "node": "Score Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Employees Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Contact": {
+      "main": [
+        [
+          {
+            "node": "High-Quality Contact?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High-Quality Contact?": {
+      "main": [
+        [
+          {
+            "node": "Save Networking Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Contact Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Networking Contact": {
+      "main": [
+        [
+          {
+            "node": "Contact Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Employees Complete": {
+      "main": [
+        [
+          {
+            "node": "Merge Summary Trigger",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Summary Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Contacts for Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contacts for Job": {
+      "main": [
+        [
+          {
+            "node": "Build Intelligence Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Intelligence Report": {
+      "main": [
+        [
+          {
+            "node": "Send Intelligence Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Intelligence Summary": {
+      "main": [
+        [
+          {
+            "node": "Job Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Processed": {
+      "main": [
+        [
+          {
+            "node": "Process Each Employee",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Complete": {
+      "main": [
+        [
+          {
+            "node": "Process Each Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Company Data": {
+      "main": [
+        [
+          {
+            "node": "Compile Company Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "staticData": {},
+  "meta": {
+    "instanceId": "n8n-local"
+  },
+  "id": "network-intelligence-corrected",
+  "tags": []
+}

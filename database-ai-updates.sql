@@ -7,7 +7,14 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- 1. Add new columns to existing job_applications table
 ALTER TABLE job_applications
 ADD COLUMN IF NOT EXISTS jd_embedding vector(1536),
-ADD COLUMN IF NOT EXISTS ai_match_score numeric;
+ADD COLUMN IF NOT EXISTS ai_match_score numeric,
+ADD COLUMN IF NOT EXISTS min_salary numeric,
+ADD COLUMN IF NOT EXISTS max_salary numeric,
+ADD COLUMN IF NOT EXISTS date_applied timestamp,
+ADD COLUMN IF NOT EXISTS deadline timestamp,
+ADD COLUMN IF NOT EXISTS excitement integer CHECK (excitement >= 1 AND excitement <= 5),
+ADD COLUMN IF NOT EXISTS follow_up_date timestamp,
+ADD COLUMN IF NOT EXISTS follow_up_notes text;
 
 -- 2. Create resume_versions table (if not exists)
 CREATE TABLE IF NOT EXISTS resume_versions (

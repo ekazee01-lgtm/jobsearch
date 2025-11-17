@@ -1,0 +1,228 @@
+{
+  "name": "Analytics & Reporting",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1
+            }
+          ]
+        }
+      },
+      "name": "Weekly Report",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 400],
+      "id": "401"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "WITH metrics AS (\n  SELECT \n    COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as jobs_discovered,\n    COUNT(*) FILTER (WHERE applied_at >= NOW() - INTERVAL '7 days') as applications_sent,\n    COUNT(*) FILTER (WHERE status = 'interview' AND updated_at >= NOW() - INTERVAL '7 days') as interviews_scheduled,\n    COUNT(*) FILTER (WHERE status = 'offer') as offers_received,\n    AVG(ai_score) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as avg_ai_score,\n    COUNT(DISTINCT source) as unique_sources\n  FROM job_opportunities\n),\nconversion AS (\n  SELECT \n    COUNT(*) FILTER (WHERE status IN ('interview', 'offer')) as responses,\n    COUNT(*) FILTER (WHERE status = 'applied') as total_applied,\n    ROUND(COUNT(*) FILTER (WHERE status IN ('interview', 'offer'))::numeric / NULLIF(COUNT(*) FILTER (WHERE status = 'applied'), 0) * 100, 1) as response_rate\n  FROM job_opportunities\n  WHERE applied_at >= NOW() - INTERVAL '30 days'\n),\ntop_sources AS (\n  SELECT source, COUNT(*) as count, AVG(ai_score) as avg_score\n  FROM job_opportunities\n  WHERE created_at >= NOW() - INTERVAL '7 days'\n  GROUP BY source\n  ORDER BY count DESC\n  LIMIT 5\n)\nSELECT * FROM metrics, conversion"
+      },
+      "name": "Gather Metrics",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "id": "402"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT \n  source,\n  COUNT(*) as applications,\n  AVG(ai_score) as avg_score,\n  COUNT(*) FILTER (WHERE status IN ('interview', 'offer')) as responses,\n  ROUND(COUNT(*) FILTER (WHERE status IN ('interview', 'offer'))::numeric / COUNT(*) * 100, 1) as response_rate\nFROM job_opportunities \nWHERE applied_at >= NOW() - INTERVAL '30 days'\nGROUP BY source\nORDER BY response_rate DESC"
+      },
+      "name": "Source Performance",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 450],
+      "id": "403"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "WITH weekly_trend AS (\n  SELECT \n    DATE_TRUNC('week', applied_at) as week,\n    COUNT(*) as applications,\n    COUNT(*) FILTER (WHERE status IN ('interview', 'offer')) as responses\n  FROM job_opportunities\n  WHERE applied_at >= NOW() - INTERVAL '8 weeks'\n  GROUP BY week\n  ORDER BY week\n)\nSELECT \n  week,\n  applications,\n  responses,\n  LAG(applications) OVER (ORDER BY week) as prev_week_apps,\n  LAG(responses) OVER (ORDER BY week) as prev_week_responses\nFROM weekly_trend"
+      },
+      "name": "Trend Analysis",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 600],
+      "id": "404"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate HTML report\nconst metrics = $input.all()[0].json;\nconst sources = $input.all()[1].json;\nconst trends = $input.all()[2].json;\n\nconst html = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }\n    .header { background: #2563eb; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }\n    .metric-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 30px; }\n    .metric-card { background: #f3f4f6; padding: 15px; border-radius: 8px; }\n    .metric-value { font-size: 2em; font-weight: bold; color: #1f2937; }\n    .metric-label { color: #6b7280; margin-top: 5px; }\n    .section { margin-bottom: 30px; }\n    .table { width: 100%; border-collapse: collapse; }\n    .table th, .table td { padding: 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }\n    .table th { background: #f9fafb; font-weight: 600; }\n    .trend-up { color: #10b981; }\n    .trend-down { color: #ef4444; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>Weekly Job Search Report</h1>\n    <p>Week of ${new Date().toLocaleDateString()}</p>\n  </div>\n  \n  <div class=\"metric-grid\">\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics[0].jobs_discovered}</div>\n      <div class=\"metric-label\">Jobs Discovered</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics[0].applications_sent}</div>\n      <div class=\"metric-label\">Applications Sent</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics[0].response_rate || 0}%</div>\n      <div class=\"metric-label\">Response Rate</div>\n    </div>\n  </div>\n  \n  <div class=\"section\">\n    <h2>Source Performance</h2>\n    <table class=\"table\">\n      <thead>\n        <tr>\n          <th>Source</th>\n          <th>Applications</th>\n          <th>Avg Score</th>\n          <th>Response Rate</th>\n        </tr>\n      </thead>\n      <tbody>\n        ${sources.map(s => `\n        <tr>\n          <td>${s.source}</td>\n          <td>${s.applications}</td>\n          <td>${s.avg_score.toFixed(1)}</td>\n          <td>${s.response_rate}%</td>\n        </tr>`).join('')}\n      </tbody>\n    </table>\n  </div>\n  \n  <div class=\"section\">\n    <h2>Weekly Trends</h2>\n    <table class=\"table\">\n      <thead>\n        <tr>\n          <th>Week</th>\n          <th>Applications</th>\n          <th>Change</th>\n          <th>Responses</th>\n        </tr>\n      </thead>\n      <tbody>\n        ${trends.map(t => {\n          const change = t.prev_week_apps ? \n            ((t.applications - t.prev_week_apps) / t.prev_week_apps * 100).toFixed(0) : 'N/A';\n          const changeClass = change > 0 ? 'trend-up' : change < 0 ? 'trend-down' : '';\n          return `\n          <tr>\n            <td>${new Date(t.week).toLocaleDateString()}</td>\n            <td>${t.applications}</td>\n            <td class=\"${changeClass}\">${change}%</td>\n            <td>${t.responses}</td>\n          </tr>`;\n        }).join('')}\n      </tbody>\n    </table>\n  </div>\n</body>\n</html>\n`;\n\nreturn {\n  htmlReport: html,\n  metrics: metrics[0],\n  topSources: sources.slice(0, 3),\n  weekOverWeek: trends[trends.length - 1]\n};"
+      },
+      "name": "Generate HTML Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "id": "405"
+    },
+    {
+      "parameters": {
+        "toEmail": "ekazee@outlook.com",
+        "subject": "📊 Weekly Job Search Report - {{$now.format('MMM DD')}}",
+        "message": "Your weekly job search metrics are attached.\n\n📈 This Week's Highlights:\n• Jobs Discovered: {{$json.metrics.jobs_discovered}}\n• Applications Sent: {{$json.metrics.applications_sent}}\n• Response Rate: {{$json.metrics.response_rate}}%\n\nTop Performing Sources:\n{{$json.topSources.map(s => `• ${s.source}: ${s.response_rate}% response rate`).join('\\n')}}\n\nView the full report for detailed analytics.",
+        "attachments": {
+          "attachment": [
+            {
+              "fieldName": "data",
+              "fileName": "weekly-report.html",
+              "fileContent": "={{$json.htmlReport}}"
+            }
+          ]
+        }
+      },
+      "name": "Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [850, 400],
+      "id": "406"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "analytics_history",
+        "columns": "report_date, metrics, performance_data",
+        "additionalFields": {}
+      },
+      "name": "Store Analytics",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "id": "407"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate actionable insights\nconst metrics = $input.item.json.metrics;\nconst sources = $input.item.json.topSources;\n\nconst insights = [];\n\n// Response rate insight\nif (metrics.response_rate < 5) {\n  insights.push({\n    type: 'warning',\n    message: 'Response rate is below 5%. Consider revising your application strategy.',\n    action: 'Review resume keywords and cover letter personalization'\n  });\n} else if (metrics.response_rate > 15) {\n  insights.push({\n    type: 'success',\n    message: 'Excellent response rate! Your application strategy is working well.',\n    action: 'Document what is working and scale successful approaches'\n  });\n}\n\n// Application volume insight\nif (metrics.applications_sent < 10) {\n  insights.push({\n    type: 'warning',\n    message: 'Low application volume this week.',\n    action: 'Consider increasing job discovery frequency or lowering AI score threshold'\n  });\n}\n\n// Source performance insight\nconst bestSource = sources[0];\nif (bestSource && bestSource.response_rate > 10) {\n  insights.push({\n    type: 'info',\n    message: `${bestSource.source} is your best performing source with ${bestSource.response_rate}% response rate.`,\n    action: `Focus more effort on ${bestSource.source} opportunities`\n  });\n}\n\n// AI score insight\nif (metrics.avg_ai_score < 7) {\n  insights.push({\n    type: 'info',\n    message: 'Average AI score is below 7. You may be applying to less relevant positions.',\n    action: 'Refine search queries to target more relevant roles'\n  });\n}\n\nreturn {\n  insights,\n  recommendations: insights.map(i => i.action),\n  timestamp: new Date().toISOString()\n};"
+      },
+      "name": "Generate Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 550],
+      "id": "408"
+    },
+    {
+      "parameters": {
+        "url": "{{$env.SLACK_WEBHOOK_URL}}",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "Weekly Job Search Update"
+            },
+            {
+              "name": "blocks",
+              "value": "={{JSON.stringify([\n  {\n    type: 'header',\n    text: {\n      type: 'plain_text',\n      text: '📊 Weekly Job Search Report'\n    }\n  },\n  {\n    type: 'section',\n    fields: [\n      {\n        type: 'mrkdwn',\n        text: `*Jobs Found:* ${$json.metrics.jobs_discovered}`\n      },\n      {\n        type: 'mrkdwn',\n        text: `*Applied:* ${$json.metrics.applications_sent}`\n      },\n      {\n        type: 'mrkdwn',\n        text: `*Interviews:* ${$json.metrics.interviews_scheduled}`\n      },\n      {\n        type: 'mrkdwn',\n        text: `*Response Rate:* ${$json.metrics.response_rate}%`\n      }\n    ]\n  },\n  {\n    type: 'section',\n    text: {\n      type: 'mrkdwn',\n      text: '*Key Insights:*\\n' + $json.insights.map(i => `• ${i.message}`).join('\\n')\n    }\n  }\n])}}"
+            }
+          ]
+        }
+      },
+      "name": "Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 550],
+      "id": "409"
+    }
+  ],
+  "connections": {
+    "Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "Gather Metrics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Source Performance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trend Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gather Metrics": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Source Performance": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Trend Analysis": {
+      "main": [
+        [
+          {
+            "node": "Generate HTML Report",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Generate HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Email Report",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store Analytics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Insights": {
+      "main": [
+        [
+          {
+            "node": "Slack Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

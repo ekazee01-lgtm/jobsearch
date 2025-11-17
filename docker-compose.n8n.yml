@@ -1,0 +1,63 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: jobsearch-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # Basic n8n configuration
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODE_ENV=production
+      # Job Search Workflow Variables
+      - USER_ID=542413a9-b564-423c-96c9-99d51cc01107
+      - SUPABASE_URL=https://snmdcbrvvzasubdnnsbd.supabase.co
+      # Security settings
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-changeme123}
+
+      # Webhook settings for your job search platform
+      - WEBHOOK_URL=http://localhost:5678
+      - N8N_PAYLOAD_SIZE_MAX=16
+
+      # Database persistence
+      - DB_TYPE=sqlite
+      - DB_SQLITE_DATABASE=/home/node/.n8n/database.sqlite
+
+      # Timezone
+      - GENERIC_TIMEZONE=America/New_York
+
+      # Enable community nodes for additional integrations
+      - N8N_COMMUNITY_PACKAGES_ENABLED=true
+
+      # Log level for debugging
+      - N8N_LOG_LEVEL=info
+
+    volumes:
+      # Persist n8n data
+      - n8n_data:/home/node/.n8n
+
+      # Mount your job search project for easy access to files
+      - .:/home/node/jobsearch:ro
+
+    networks:
+      - jobsearch-network
+
+  # Optional: Redis for better performance with large workflows
+  redis:
+    image: redis:7-alpine
+    container_name: jobsearch-redis
+    restart: unless-stopped
+    networks:
+      - jobsearch-network
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  jobsearch-network:
+    driver: bridge

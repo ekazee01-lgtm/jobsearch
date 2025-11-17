@@ -1,0 +1,174 @@
+{
+  "name": "Job Search Automation with Crawl4AI",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Job Sources Configuration\nDefine the job boards to scrape",
+        "jsCode": "// Define job search parameters\nconst jobSearchConfig = {\n  keywords: ['AI Adoption Specialist', 'Legal Technology', 'Instructional Design'],\n  locations: ['Remote', 'Texas', 'Dallas'],\n  jobBoards: [\n    {\n      name: 'Indeed',\n      url: 'https://www.indeed.com/jobs',\n      strategy: 'indeed'\n    },\n    {\n      name: 'LinkedIn',\n      url: 'https://www.linkedin.com/jobs',\n      strategy: 'linkedin'\n    },\n    {\n      name: 'SimplyHired',\n      url: 'https://www.simplyhired.com/search',\n      strategy: 'job_listing'\n    }\n  ]\n};\n\n// Generate search URLs\nconst searchUrls = [];\nfor (const board of jobSearchConfig.jobBoards) {\n  for (const keyword of jobSearchConfig.keywords) {\n    for (const location of jobSearchConfig.locations) {\n      searchUrls.push({\n        board: board.name,\n        keyword: keyword,\n        location: location,\n        url: `${board.url}?q=${encodeURIComponent(keyword)}&l=${encodeURIComponent(location)}`,\n        strategy: board.strategy\n      });\n    }\n  }\n}\n\nreturn searchUrls;"
+      },
+      "name": "Generate Search URLs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "command": "cd /path/to/jobsearch && source venv/bin/activate && python -c \"\nimport asyncio\nimport json\nimport sys\nfrom crawl4ai import AsyncWebCrawler\nfrom crawl4ai.extraction_strategy import JsonCssExtractionStrategy\n\nurl = '{{$json.url}}'\nstrategy = '{{$json.strategy}}'\n\n# Define extraction strategies\nstrategies = {\n    'indeed': {\n        'baseSelector': '.jobsearch-ResultsList .result',\n        'fields': [\n            {'name': 'title', 'selector': '.jobTitle span[title]', 'type': 'text'},\n            {'name': 'company', 'selector': '.companyName', 'type': 'text'},\n            {'name': 'location', 'selector': '.locationsContainer', 'type': 'text'},\n            {'name': 'salary', 'selector': '.salary-snippet', 'type': 'text'}\n        ]\n    },\n    'linkedin': {\n        'baseSelector': '.jobs-search__results-list li',\n        'fields': [\n            {'name': 'title', 'selector': '.base-search-card__title', 'type': 'text'},\n            {'name': 'company', 'selector': '.base-search-card__subtitle', 'type': 'text'},\n            {'name': 'location', 'selector': '.job-search-card__location', 'type': 'text'}\n        ]\n    },\n    'job_listing': {\n        'baseSelector': '[data-testid=\\'job-card\\'], .job-listing',\n        'fields': [\n            {'name': 'title', 'selector': '.job-title, h2, h3', 'type': 'text'},\n            {'name': 'company', 'selector': '.company-name', 'type': 'text'},\n            {'name': 'location', 'selector': '.location', 'type': 'text'}\n        ]\n    }\n}\n\nasync def scrape():\n    async with AsyncWebCrawler(headless=True) as crawler:\n        strategy_config = strategies.get(strategy, strategies['job_listing'])\n        extraction = JsonCssExtractionStrategy(schema={'name': 'Jobs', **strategy_config})\n        result = await crawler.arun(url=url, extraction_strategy=extraction)\n        return result\n\nresult = asyncio.run(scrape())\nprint(json.dumps({'success': result.success, 'data': result.extracted_content}))\n\""
+      },
+      "name": "Crawl4AI Scraper",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/scrape",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "url",
+              "value": "={{$json.url}}"
+            },
+            {
+              "name": "extraction_strategy",
+              "value": "={{$json.strategy}}"
+            },
+            {
+              "name": "timeout",
+              "value": "30"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Alternative: Crawl4AI API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 500],
+      "notConnected": true
+    },
+    {
+      "parameters": {
+        "content": "## AI Job Scoring\nScore each job based on match criteria",
+        "jsCode": "// Score job relevance based on Eric's profile\nconst ericProfile = {\n  skills: ['AI Adoption', 'Legal Technology', 'Instructional Design', 'ChatGPT', 'Claude', 'iManage', 'NetDocuments'],\n  experience: 12,\n  desiredSalary: 100000,\n  preferredLocation: ['Remote', 'Texas']\n};\n\nfunction scoreJob(job) {\n  let score = 0;\n  const title = (job.title || '').toLowerCase();\n  const description = (job.description || '').toLowerCase();\n  const combined = title + ' ' + description;\n  \n  // Skill matching (40 points max)\n  for (const skill of ericProfile.skills) {\n    if (combined.includes(skill.toLowerCase())) {\n      score += 5;\n    }\n  }\n  \n  // Title relevance (30 points max)\n  const titleKeywords = ['ai', 'adoption', 'specialist', 'legal', 'technology', 'instructional'];\n  for (const keyword of titleKeywords) {\n    if (title.includes(keyword)) {\n      score += 5;\n    }\n  }\n  \n  // Location preference (20 points)\n  const location = (job.location || '').toLowerCase();\n  if (location.includes('remote')) score += 20;\n  else if (location.includes('texas') || location.includes('dallas')) score += 15;\n  \n  // Salary match (10 points)\n  const salary = job.salary || '';\n  if (salary.includes('100') || salary.includes('110') || salary.includes('120')) {\n    score += 10;\n  }\n  \n  return {\n    ...job,\n    matchScore: score,\n    recommendation: score >= 60 ? 'Apply Now' : score >= 40 ? 'Consider' : 'Skip',\n    scoreBreakdown: {\n      skills: Math.min(40, score),\n      title: Math.min(30, score - 40),\n      location: location.includes('remote') ? 20 : 0,\n      salary: salary ? 10 : 0\n    }\n  };\n}\n\n// Parse scraped data\nlet jobs = [];\ntry {\n  const data = JSON.parse($input.item.json.data || '[]');\n  jobs = Array.isArray(data) ? data : [data];\n} catch (e) {\n  jobs = [{title: 'Error parsing', error: e.toString()}];\n}\n\n// Score all jobs\nconst scoredJobs = jobs.map(scoreJob);\n\n// Sort by score\nscoredJobs.sort((a, b) => b.matchScore - a.matchScore);\n\nreturn scoredJobs;"
+      },
+      "name": "AI Job Scoring",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Generate Tailored Resume & Cover Letter",
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": {
+          "messageHistory": [],
+          "userMessage": "Based on this job listing:\n\nTitle: {{$json.title}}\nCompany: {{$json.company}}\nLocation: {{$json.location}}\nDescription: {{$json.description}}\n\nGenerate a tailored version of Eric's resume and cover letter. Use his existing resume as the base:\n\n[Eric's Resume Content Here - pull from uploaded files]\n\nProvide:\n1. Key resume modifications to highlight relevant experience\n2. A compelling cover letter opening paragraph\n3. 3 bullet points showcasing relevant achievements"
+        },
+        "options": {}
+      },
+      "name": "Generate Application Materials",
+      "type": "n8n-nodes-langchain.anthropic",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": "public",
+        "table": "job_applications",
+        "columns": "job_url,job_title,company,location,match_score,status,scraped_data,resume_version,cover_letter",
+        "additionalFields": {}
+      },
+      "name": "Store in Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.matchScore}}",
+              "operation": "largerEqual",
+              "value2": 60
+            }
+          ]
+        }
+      },
+      "name": "Filter High Matches",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "content": "## Auto-Apply (with approval)",
+        "jsCode": "// This would integrate with job board automation tools\n// For now, create a task list for manual application\n\nconst applyTask = {\n  job: $input.item.json,\n  action: 'APPLY',\n  priority: $input.item.json.matchScore >= 80 ? 'HIGH' : 'MEDIUM',\n  materials: {\n    resume: 'tailored_resume_v' + Date.now() + '.pdf',\n    coverLetter: 'tailored_cover_v' + Date.now() + '.pdf'\n  },\n  deadline: new Date(Date.now() + 24*60*60*1000).toISOString(),\n  notes: 'Auto-generated application materials ready for review'\n};\n\nreturn applyTask;"
+      },
+      "name": "Queue for Application",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 250]
+    },
+    {
+      "parameters": {
+        "channel": "#job-search-alerts",
+        "text": "🎯 New High-Match Job Found!\n\n*{{$json.job.title}}* at {{$json.job.company}}\n📍 {{$json.job.location}}\n💯 Match Score: {{$json.job.matchScore}}/100\n\n*Recommendation:* {{$json.job.recommendation}}\n\n[View Application Materials]({{$json.materials.resume}})\n\nDeadline: {{$json.deadline}}",
+        "additionalFields": {}
+      },
+      "name": "Slack Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1850, 250]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{"node": "Generate Search URLs", "type": "main", "index": 0}]]
+    },
+    "Generate Search URLs": {
+      "main": [[{"node": "Crawl4AI Scraper", "type": "main", "index": 0}]]
+    },
+    "Crawl4AI Scraper": {
+      "main": [[{"node": "AI Job Scoring", "type": "main", "index": 0}]]
+    },
+    "AI Job Scoring": {
+      "main": [[{"node": "Generate Application Materials", "type": "main", "index": 0}]]
+    },
+    "Generate Application Materials": {
+      "main": [[{"node": "Store in Supabase", "type": "main", "index": 0}]]
+    },
+    "Store in Supabase": {
+      "main": [[{"node": "Filter High Matches", "type": "main", "index": 0}]]
+    },
+    "Filter High Matches": {
+      "main": [
+        [{"node": "Queue for Application", "type": "main", "index": 0}],
+        []
+      ]
+    },
+    "Queue for Application": {
+      "main": [[{"node": "Slack Notification", "type": "main", "index": 0}]]
+    }
+  }
+}

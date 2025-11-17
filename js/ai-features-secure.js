@@ -56,6 +56,62 @@ class AIFeaturesSecure {
     }
 
     /**
+     * Initialize master materials from the assets folder
+     */
+    async initializeMasterMaterials(userId) {
+        try {
+            // Check if master resume already exists
+            const existingResume = await this.getMasterResume(userId);
+            if (existingResume) {
+                console.log('Master resume already exists');
+                return existingResume;
+            }
+
+            // Load master resume from assets (relative path for GitHub Pages)
+            const basePath = window.location.pathname.replace(/[^/]+$/, '');
+            const resumeResponse = await fetch(`${basePath}assets/master-resume.md`);
+            const masterResumeContent = await resumeResponse.text();
+
+            // Load cover letter templates from assets
+            const templateResponse = await fetch(`${basePath}assets/cover-letter-templates.md`);
+            const coverLetterTemplates = await templateResponse.text();
+
+            // Save master resume
+            const masterResume = await this.saveMasterResume(userId, masterResumeContent);
+
+            // Save cover letter template as separate entry
+            const { data: templateData, error: templateError } = await this.supabase
+                .from('resume_versions')
+                .upsert({
+                    user_id: userId,
+                    label: 'Cover Letter Template',
+                    resume_md: '',
+                    cover_letter_md: coverLetterTemplates
+                }, {
+                    onConflict: 'user_id,label'
+                })
+                .select()
+                .single();
+
+            if (templateError) {
+                console.error('Error saving cover letter template:', templateError);
+            }
+
+            // Log initialization event
+            await this.logEvent(null, userId, 'master_materials_initialized', {
+                master_resume_id: masterResume.id,
+                template_id: templateData?.id
+            });
+
+            return masterResume;
+
+        } catch (error) {
+            console.error('Error initializing master materials:', error);
+            throw error;
+        }
+    }
+
+    /**
      * Tailor resume for specific job using secure Edge Function
      */
     async tailorResume(jobId, userId) {
@@ -125,7 +181,7 @@ class AIFeaturesSecure {
 
             // Prepare email content
             const emailContent = {
-                subject: `Application: ${job.role} – ${job.company} (Eric Kazee)`,
+                subject: `Application: ${job.role} - ${job.company} (Eric Kazee)`,
                 body: resume.cover_letter_md || '',
                 resume: resume.resume_md || '',
                 jobUrl: job.url || '',
@@ -153,9 +209,12 @@ class AIFeaturesSecure {
      */
     async calculateMatchScore(jobDescription, userSkills = []) {
         const keywords = [
-            'ai', 'artificial intelligence', 'machine learning', 'legal technology',
-            'prompt engineering', 'automation', 'contract analysis', 'legal research',
-            'compliance', 'aba model rule', 'legal workflows', 'document review'
+            'ai', 'artificial intelligence', 'machine learning', 'rag', 'retrieval augmented generation',
+            'prompt engineering', 'automation', 'enablement', 'adoption', 'implementation',
+            'governance', 'compliance', 'web3', 'blockchain', 'change management',
+            'training', 'coaching', 'product management', 'program management',
+            'supabase', 'openai', 'claude', 'chatgpt', 'llm', 'large language model',
+            'workflow automation', 'ai transformation', 'organizational change'
         ];
 
         if (!jobDescription) return 0;

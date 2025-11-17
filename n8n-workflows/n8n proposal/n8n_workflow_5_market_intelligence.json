@@ -1,0 +1,464 @@
+{
+  "name": "Market Intelligence - Weekly Analytics & Optimization",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * 1"
+            }
+          ]
+        }
+      },
+      "id": "schedule-weekly-monday",
+      "name": "Schedule: Every Monday 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "notes": "Runs market intelligence analysis every Monday morning to provide weekly insights."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get comprehensive analytics for past 7 days\nSELECT \n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as jobs_discovered_week,\n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days' AND ai_match_score >= 70) as high_score_jobs_week,\n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') as jobs_discovered_month,\n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days' AND ai_match_score >= 70) as high_score_jobs_month,\n  AVG(ai_match_score) as avg_score,\n  MAX(ai_match_score) as max_score,\n  MIN(ai_match_score) as min_score\nFROM jobs;",
+        "options": {}
+      },
+      "id": "get-job-stats",
+      "name": "Get Job Discovery Stats",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Fetches job discovery statistics for the week and month."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get application statistics\nSELECT \n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as applications_week,\n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') as applications_month,\n  COUNT(*) FILTER (WHERE status = 'interview_scheduled') as interviews_total,\n  COUNT(*) FILTER (WHERE status = 'rejected') as rejections_total,\n  COUNT(*) FILTER (WHERE status = 'interview_scheduled' AND created_at >= NOW() - INTERVAL '30 days') as interviews_month,\n  COUNT(*) FILTER (WHERE status = 'rejected' AND created_at >= NOW() - INTERVAL '7 days') as rejections_week,\n  COUNT(*) FILTER (WHERE submission_method = 'linkedin_easy_apply') as linkedin_apps,\n  COUNT(*) FILTER (WHERE submission_method = 'indeed_easy_apply') as indeed_apps,\n  COUNT(*) FILTER (WHERE submission_method = 'manual') as manual_apps\nFROM applications;",
+        "options": {}
+      },
+      "id": "get-application-stats",
+      "name": "Get Application Stats",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Fetches application and response statistics."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get source performance\nSELECT \n  source,\n  COUNT(*) as total_jobs,\n  AVG(ai_match_score) as avg_score,\n  COUNT(*) FILTER (WHERE ai_match_score >= 70) as high_quality_jobs,\n  COUNT(*) FILTER (WHERE status IN ('applied', 'interview_scheduled', 'offer')) as resulted_in_action\nFROM jobs\nWHERE created_at >= NOW() - INTERVAL '30 days'\nGROUP BY source\nORDER BY high_quality_jobs DESC;",
+        "options": {}
+      },
+      "id": "get-source-performance",
+      "name": "Get Source Performance",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Analyzes which job sources produce the best quality opportunities."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get skill demand analysis\nSELECT \n  jsonb_array_elements_text(requirements) as skill,\n  COUNT(*) as job_count,\n  AVG(ai_match_score) as avg_match_score\nFROM jobs\nWHERE requirements IS NOT NULL\n  AND created_at >= NOW() - INTERVAL '30 days'\nGROUP BY skill\nORDER BY job_count DESC\nLIMIT 20;",
+        "options": {}
+      },
+      "id": "get-skill-demand",
+      "name": "Get Skill Demand Trends",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 500],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Identifies most in-demand skills from job requirements."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get salary insights\nSELECT \n  salary_range,\n  COUNT(*) as job_count,\n  AVG(ai_match_score) as avg_score,\n  COUNT(*) FILTER (WHERE status IN ('applied', 'interview_scheduled')) as applied_count\nFROM jobs\nWHERE salary_range IS NOT NULL\n  AND created_at >= NOW() - INTERVAL '30 days'\nGROUP BY salary_range\nORDER BY applied_count DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "get-salary-insights",
+      "name": "Get Salary Range Analysis",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 600],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Analyzes salary ranges and application success by compensation."
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get networking performance\nSELECT \n  COUNT(*) as total_contacts,\n  COUNT(*) FILTER (WHERE status = 'connected') as connections_made,\n  COUNT(*) FILTER (WHERE status = 'contacted') as conversations_started,\n  AVG(relevance_score) as avg_relevance_score,\n  COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') as contacts_week\nFROM networking_contacts;",
+        "options": {}
+      },
+      "id": "get-networking-stats",
+      "name": "Get Networking Stats",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 700],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Analyzes networking activity and connection success rates."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Combine all analytics data\nconst jobStats = $('Get Job Discovery Stats').first().json;\nconst appStats = $('Get Application Stats').first().json;\nconst sourcePerf = $('Get Source Performance').all();\nconst skillDemand = $('Get Skill Demand Trends').all();\nconst salaryInsights = $('Get Salary Range Analysis').all();\nconst networkStats = $('Get Networking Stats').first().json;\n\n// Calculate key metrics\nconst responseRate = appStats.applications_month > 0 \n  ? ((appStats.interviews_month / appStats.applications_month) * 100).toFixed(2)\n  : 0;\n\nconst weekOverWeekGrowth = jobStats.jobs_discovered_month > 0\n  ? (((jobStats.jobs_discovered_week / (jobStats.jobs_discovered_month / 4)) - 1) * 100).toFixed(1)\n  : 0;\n\nconst conversionRate = jobStats.jobs_discovered_month > 0\n  ? ((appStats.applications_month / jobStats.jobs_discovered_month) * 100).toFixed(2)\n  : 0;\n\nconst networkingROI = networkStats.total_contacts > 0\n  ? ((networkStats.conversations_started / networkStats.total_contacts) * 100).toFixed(2)\n  : 0;\n\nreturn [{\n  json: {\n    period: 'week',\n    generated_at: new Date().toISOString(),\n    \n    // Discovery metrics\n    discovery: {\n      jobs_this_week: jobStats.jobs_discovered_week,\n      jobs_this_month: jobStats.jobs_discovered_month,\n      high_quality_week: jobStats.high_score_jobs_week,\n      high_quality_month: jobStats.high_score_jobs_month,\n      avg_score: parseFloat(jobStats.avg_score || 0).toFixed(1),\n      week_over_week_growth: weekOverWeekGrowth\n    },\n    \n    // Application metrics\n    applications: {\n      submitted_week: appStats.applications_week,\n      submitted_month: appStats.applications_month,\n      interviews_total: appStats.interviews_total,\n      interviews_month: appStats.interviews_month,\n      rejections_week: appStats.rejections_week,\n      response_rate: responseRate,\n      conversion_rate: conversionRate,\n      by_method: {\n        linkedin: appStats.linkedin_apps,\n        indeed: appStats.indeed_apps,\n        manual: appStats.manual_apps\n      }\n    },\n    \n    // Source performance\n    sources: sourcePerf.map(s => s.json),\n    \n    // Skill trends\n    top_skills: skillDemand.slice(0, 10).map(s => s.json),\n    \n    // Salary insights\n    salary_ranges: salaryInsights.map(s => s.json),\n    \n    // Networking metrics\n    networking: {\n      total_contacts: networkStats.total_contacts,\n      connections_made: networkStats.connections_made,\n      conversations: networkStats.conversations_started,\n      contacts_this_week: networkStats.contacts_week,\n      roi: networkingROI\n    }\n  }\n}];"
+      },
+      "id": "combine-analytics",
+      "name": "Combine All Analytics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "notes": "Aggregates all metrics into a single analytics object."
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4-20250514",
+        "options": {
+          "maxTokens": 2500,
+          "temperature": 0.4
+        },
+        "text": "=# Weekly Market Intelligence Analysis\n\n## Data Summary\n\n### Discovery Performance (Past Week)\n- Jobs discovered: {{ $json.discovery.jobs_this_week }}\n- High-quality jobs (score 70+): {{ $json.discovery.high_quality_week }}\n- Average match score: {{ $json.discovery.avg_score }}/100\n- Week-over-week growth: {{ $json.discovery.week_over_week_growth }}%\n\n### Application Performance (Past Month)\n- Applications submitted: {{ $json.applications.submitted_month }}\n- Interview requests: {{ $json.applications.interviews_month }}\n- Response rate: {{ $json.applications.response_rate }}%\n- Conversion rate (jobs → apps): {{ $json.applications.conversion_rate }}%\n\n### Application Methods\n- LinkedIn Easy Apply: {{ $json.applications.by_method.linkedin }}\n- Indeed Easy Apply: {{ $json.applications.by_method.indeed }}\n- Manual applications: {{ $json.applications.by_method.manual }}\n\n### Source Performance (Past Month)\n{{ $json.sources.map(s => `- ${s.source}: ${s.total_jobs} jobs, avg score ${parseFloat(s.avg_score).toFixed(1)}, ${s.high_quality_jobs} high-quality`).join('\\n') }}\n\n### Top Skills in Demand\n{{ $json.top_skills.slice(0, 10).map((s, i) => `${i+1}. ${s.skill} (${s.job_count} jobs, avg match ${parseFloat(s.avg_match_score).toFixed(1)})`).join('\\n') }}\n\n### Salary Insights\n{{ $json.salary_ranges.slice(0, 5).map(s => `- ${s.salary_range}: ${s.job_count} jobs, ${s.applied_count} applied`).join('\\n') }}\n\n### Networking Performance\n- Total contacts identified: {{ $json.networking.total_contacts }}\n- Connections made: {{ $json.networking.connections_made }}\n- Conversations started: {{ $json.networking.conversations }}\n- This week's contacts: {{ $json.networking.contacts_this_week }}\n- Networking ROI: {{ $json.networking.roi }}%\n\n---\n\n## Analysis Task\n\nAs an AI job search strategist, provide a comprehensive weekly analysis with:\n\n### 1. Performance Assessment (200 words)\n- How is the job search performing vs. targets?\n- Which metrics are strong? Which need improvement?\n- Are we on track for 325-400 applications in 30 days?\n- Is the 2-4% interview response rate being met?\n\n### 2. Source Optimization (150 words)\n- Which job sources are performing best?\n- Should we prioritize certain sources?\n- Are there sources producing low-quality jobs to reduce?\n- Recommendations for source mix optimization\n\n### 3. Skill Gap Analysis (150 words)\n- Which in-demand skills does Eric already have?\n- Which skills appear frequently but he lacks?\n- Should resume/profile be updated to highlight certain skills?\n- Any emerging skill trends to note?\n\n### 4. Salary Strategy (100 words)\n- Are we targeting the right salary ranges?\n- Which ranges have best response rates?\n- Should we adjust salary expectations up or down?\n\n### 5. Application Method Optimization (100 words)\n- Which application methods have best success rates?\n- Should we shift method mix?\n- Are Easy Apply submissions getting responses?\n\n### 6. Networking Effectiveness (100 words)\n- Is networking producing results?\n- Are conversations converting to opportunities?\n- Should we increase/decrease networking efforts?\n\n### 7. Action Items (Bulleted List)\nProvide 5-7 specific, actionable recommendations for this week:\n- What to do more of\n- What to do less of\n- What to change\n- What to test\n\n### 8. Week Ahead Forecast (100 words)\n- Predicted job discoveries\n- Expected applications\n- Anticipated interviews\n- Confidence level in 30-day goal\n\n**Format your response as clear sections with headers. Be specific and data-driven. Focus on actionable insights.**"
+      },
+      "id": "generate-intelligence-report",
+      "name": "Generate Intelligence Report (Claude)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [850, 400],
+      "credentials": {
+        "anthropicApi": {
+          "id": "2",
+          "name": "Anthropic Claude"
+        }
+      },
+      "notes": "AI analyzes all metrics and generates strategic insights and recommendations."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Create dashboard data structure\nconst analytics = $('Combine All Analytics').first().json;\nconst aiReport = $input.first().json.response || $input.first().json.output;\n\nconst dashboardData = {\n  generated_at: analytics.generated_at,\n  period: 'weekly',\n  \n  // Summary cards\n  summary: {\n    jobs_discovered: analytics.discovery.jobs_this_week,\n    applications_submitted: analytics.applications.submitted_week,\n    interviews_scheduled: analytics.applications.interviews_month,\n    response_rate: `${analytics.applications.response_rate}%`,\n    avg_match_score: analytics.discovery.avg_score\n  },\n  \n  // Charts data\n  charts: {\n    source_performance: analytics.sources.map(s => ({\n      source: s.source,\n      jobs: s.total_jobs,\n      quality: s.high_quality_jobs,\n      avg_score: parseFloat(s.avg_score).toFixed(1)\n    })),\n    \n    skill_demand: analytics.top_skills.map(s => ({\n      skill: s.skill,\n      count: s.job_count,\n      match: parseFloat(s.avg_match_score).toFixed(1)\n    })),\n    \n    application_funnel: [\n      { stage: 'Jobs Discovered', count: analytics.discovery.jobs_this_month },\n      { stage: 'High Quality (70+)', count: analytics.discovery.high_quality_month },\n      { stage: 'Applications Submitted', count: analytics.applications.submitted_month },\n      { stage: 'Interview Requests', count: analytics.applications.interviews_month },\n      { stage: 'Active Interviews', count: analytics.applications.interviews_total }\n    ],\n    \n    weekly_trend: {\n      jobs: analytics.discovery.jobs_this_week,\n      applications: analytics.applications.submitted_week,\n      growth: analytics.discovery.week_over_week_growth\n    }\n  },\n  \n  // Key metrics\n  metrics: {\n    conversion_rate: `${analytics.applications.conversion_rate}%`,\n    response_rate: `${analytics.applications.response_rate}%`,\n    networking_roi: `${analytics.networking.roi}%`,\n    week_growth: `${analytics.discovery.week_over_week_growth}%`\n  },\n  \n  // AI insights\n  ai_analysis: aiReport,\n  \n  // Raw analytics for detailed views\n  detailed_analytics: analytics\n};\n\nreturn [{ json: dashboardData }];"
+      },
+      "id": "create-dashboard-data",
+      "name": "Create Dashboard Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400],
+      "notes": "Structures data for dashboard visualization."
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "analytics_daily",
+        "values": {
+          "date": "={{ new Date().toISOString().split('T')[0] }}",
+          "jobs_discovered": "={{ $('Combine All Analytics').first().json.discovery.jobs_this_week }}",
+          "jobs_scored_high": "={{ $('Combine All Analytics').first().json.discovery.high_quality_week }}",
+          "applications_submitted": "={{ $('Combine All Analytics').first().json.applications.submitted_week }}",
+          "applications_by_method": "={{ JSON.stringify($('Combine All Analytics').first().json.applications.by_method) }}",
+          "responses_received": "={{ $('Combine All Analytics').first().json.applications.rejections_week }}",
+          "interviews_scheduled": "={{ $('Combine All Analytics').first().json.applications.interviews_month }}",
+          "connections_sent": "={{ $('Combine All Analytics').first().json.networking.contacts_week }}",
+          "connections_accepted": "={{ $('Combine All Analytics').first().json.networking.connections_made }}",
+          "weekly_report": "={{ $input.first().json.ai_analysis }}",
+          "created_at": "={{ new Date().toISOString() }}"
+        },
+        "options": {
+          "upsert": true,
+          "onConflict": "date"
+        }
+      },
+      "id": "save-weekly-analytics",
+      "name": "Save Weekly Analytics",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "1",
+          "name": "Supabase Eric Jobs"
+        }
+      },
+      "notes": "Saves weekly analytics snapshot to database for historical tracking."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "ekazee.careers@gmail.com",
+        "subject": "=📊 Weekly Job Search Intelligence Report - Week of {{ new Date().toLocaleDateString() }}",
+        "message": "=# Weekly Job Search Intelligence Report\n**Generated:** {{ new Date().toLocaleString() }}\n**Period:** Past 7 days\n\n---\n\n## 📈 Executive Summary\n\n### This Week's Performance\n- **Jobs Discovered:** {{ $('Combine All Analytics').first().json.discovery.jobs_this_week }}\n- **High-Quality Jobs (70+):** {{ $('Combine All Analytics').first().json.discovery.high_quality_week }}\n- **Applications Submitted:** {{ $('Combine All Analytics').first().json.applications.submitted_week }}\n- **Response Rate:** {{ $('Combine All Analytics').first().json.applications.response_rate }}%\n- **Average Match Score:** {{ $('Combine All Analytics').first().json.discovery.avg_score }}/100\n\n### Month-to-Date Progress\n- **Total Jobs Discovered:** {{ $('Combine All Analytics').first().json.discovery.jobs_this_month }}\n- **Total Applications:** {{ $('Combine All Analytics').first().json.applications.submitted_month }}\n- **Interviews Scheduled:** {{ $('Combine All Analytics').first().json.applications.interviews_month }}\n- **Active Interviews:** {{ $('Combine All Analytics').first().json.applications.interviews_total }}\n\n---\n\n## 🎯 Progress Toward 30-Day Goals\n\n**Target:** 325-400 applications, 7-16 interviews, 1-2 offers\n\n**Current Pace:**\n- Applications: {{ $('Combine All Analytics').first().json.applications.submitted_month }} / 325 minimum ({{ (($('Combine All Analytics').first().json.applications.submitted_month / 325) * 100).toFixed(1) }}%)\n- Interviews: {{ $('Combine All Analytics').first().json.applications.interviews_month }} / 7 minimum\n- On track: {{ $('Combine All Analytics').first().json.applications.submitted_month >= 80 ? '✅ Yes' : '⚠️ Need to accelerate' }}\n\n---\n\n## 🔍 Top Performing Sources\n\n{{ $('Get Source Performance').all().slice(0, 3).map((s, i) => `${i+1}. **${s.json.source}**: ${s.json.total_jobs} jobs, ${s.json.high_quality_jobs} high-quality (avg score ${parseFloat(s.json.avg_score).toFixed(1)})`).join('\\n') }}\n\n---\n\n## 💡 Top Skills in Demand\n\n{{ $('Get Skill Demand Trends').all().slice(0, 5).map((s, i) => `${i+1}. ${s.json.skill} (${s.json.job_count} jobs)`).join('\\n') }}\n\n---\n\n## 🤝 Networking Performance\n\n- **Contacts Identified:** {{ $('Combine All Analytics').first().json.networking.total_contacts }}\n- **Connections Made:** {{ $('Combine All Analytics').first().json.networking.connections_made }}\n- **Conversations Started:** {{ $('Combine All Analytics').first().json.networking.conversations }}\n- **This Week:** {{ $('Combine All Analytics').first().json.networking.contacts_week }} new contacts\n- **ROI:** {{ $('Combine All Analytics').first().json.networking.roi }}%\n\n---\n\n## 🤖 AI Strategic Analysis\n\n{{ $('Generate Intelligence Report (Claude)').first().json.response || $('Generate Intelligence Report (Claude)').first().json.output }}\n\n---\n\n## 📊 View Full Dashboard\n\nFor interactive charts and detailed analytics, visit your dashboard:\nhttps://ekazee01-lgtm.github.io/jobsearch\n\n---\n\n**Keep up the momentum! You're building toward that AI adoption role! 🚀**\n\nThis report was automatically generated by your Job Search Automation System.",
+        "options": {
+          "appendAttribution": false,
+          "attachments": "={{ [] }}"
+        }
+      },
+      "id": "email-weekly-report",
+      "name": "Email Weekly Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1250, 500],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "3",
+          "name": "Gmail Eric"
+        }
+      },
+      "notes": "Sends comprehensive weekly intelligence report via email."
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate optimization recommendations based on data\nconst analytics = $('Combine All Analytics').first().json;\n\nconst recommendations = [];\n\n// Check response rate\nif (parseFloat(analytics.applications.response_rate) < 2.0) {\n  recommendations.push({\n    priority: 'high',\n    area: 'Application Quality',\n    issue: `Response rate is ${analytics.applications.response_rate}% (target: 2-4%)`,\n    action: 'Review and improve cover letter templates. Focus on personalization and company research.',\n    impact: 'Could increase interview requests by 50-100%'\n  });\n}\n\n// Check conversion rate\nif (parseFloat(analytics.applications.conversion_rate) < 20) {\n  recommendations.push({\n    priority: 'medium',\n    area: 'Application Volume',\n    issue: `Only applying to ${analytics.applications.conversion_rate}% of discovered jobs`,\n    action: 'Lower AI score threshold from 70 to 65, or approve more jobs in dashboard',\n    impact: 'Could increase weekly applications by 20-30%'\n  });\n}\n\n// Check source diversity\nconst sources = $('Get Source Performance').all();\nif (sources.length < 3) {\n  recommendations.push({\n    priority: 'medium',\n    area: 'Source Diversity',\n    issue: 'Using fewer than 3 job sources',\n    action: 'Add more job boards to workflow #1 (LinkedIn Jobs, Wellfound, AngelList)',\n    impact: 'Could discover 30-50% more relevant jobs'\n  });\n}\n\n// Check networking ROI\nif (parseFloat(analytics.networking.roi) < 20) {\n  recommendations.push({\n    priority: 'low',\n    area: 'Networking Effectiveness',\n    issue: `Only ${analytics.networking.roi}% of contacts converting to conversations`,\n    action: 'Improve LinkedIn message personalization. Reference specific posts or shared interests.',\n    impact: 'Could double networking conversation rate'\n  });\n}\n\n// Check weekly volume\nif (analytics.applications.submitted_week < 50) {\n  recommendations.push({\n    priority: 'high',\n    area: 'Application Pace',\n    issue: `Only ${analytics.applications.submitted_week} applications this week (target: 50-100)`,\n    action: 'Increase job approval rate and activate more application methods',\n    impact: 'Critical for hitting 30-day goal of 325-400 applications'\n  });\n}\n\n// Check score distribution\nif (parseFloat(analytics.discovery.avg_score) < 60) {\n  recommendations.push({\n    priority: 'medium',\n    area: 'Job Quality',\n    issue: `Average job match score is ${analytics.discovery.avg_score} (low)`,\n    action: 'Refine job search keywords in workflow #1 to better match your profile',\n    impact: 'Better quality jobs = higher application success rate'\n  });\n}\n\nreturn [{\n  json: {\n    recommendations: recommendations,\n    total_recommendations: recommendations.length,\n    high_priority: recommendations.filter(r => r.priority === 'high').length,\n    generated_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "generate-recommendations",
+      "name": "Generate Optimization Recommendations",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200],
+      "notes": "Automatically generates data-driven recommendations for optimizing the job search."
+    },
+    {
+      "parameters": {
+        "content": "=✅ **Weekly Market Intelligence Complete**\n\n**Generated:** {{ new Date().toLocaleString() }}\n\n**This Week:**\n- 📊 Jobs discovered: {{ $('Combine All Analytics').first().json.discovery.jobs_this_week }}\n- 📝 Applications: {{ $('Combine All Analytics').first().json.applications.submitted_week }}\n- 📧 Response rate: {{ $('Combine All Analytics').first().json.applications.response_rate }}%\n- 🤝 Contacts: {{ $('Combine All Analytics').first().json.networking.contacts_week }}\n\n**AI Analysis:** Generated\n**Dashboard Data:** Updated\n**Email Report:** Sent\n**Recommendations:** {{ $('Generate Optimization Recommendations').first().json.total_recommendations }} generated\n\n📊 **Check your email for the full report!**",
+        "options": {}
+      },
+      "id": "workflow-summary",
+      "name": "✅ Weekly Intelligence Summary",
+      "type": "n8n-nodes-base.sticky",
+      "typeVersion": 1,
+      "position": [1450, 400],
+      "notes": "Summary of weekly market intelligence run."
+    }
+  ],
+  "connections": {
+    "Schedule: Every Monday 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Get Job Discovery Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Application Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Source Performance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Skill Demand Trends",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Salary Range Analysis",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Networking Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Job Discovery Stats": {
+      "main": [
+        [
+          {
+            "node": "Combine All Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Application Stats": {
+      "main": [
+        [
+          {
+            "node": "Combine All Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Source Performance": {
+      "main": [
+        [
+          {
+            "node": "Combine All Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Skill Demand Trends": {
+      "main": [
+        [
+          {
+            "node": "Combine All Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Salary Range Analysis": {
+      "main": [
+        [
+          {
+            "node": "Combine All Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Networking Stats": {
+      "main": [
+        [
+          {
+            "node": "Combine All Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine All Analytics": {
+      "main": [
+        [
+          {
+            "node": "Generate Intelligence Report (Claude)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Optimization Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Intelligence Report (Claude)": {
+      "main": [
+        [
+          {
+            "node": "Create Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Dashboard Data": {
+      "main": [
+        [
+          {
+            "node": "Save Weekly Analytics",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Weekly Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Weekly Analytics": {
+      "main": [
+        [
+          {
+            "node": "✅ Weekly Intelligence Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Weekly Report": {
+      "main": [
+        [
+          {
+            "node": "✅ Weekly Intelligence Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "staticData": {
+    "user_id": "542413a9-b564-423c-96c9-99d51cc01107",
+    "supabase_url": "https://snmdcbrvvzasubdnnsbd.supabase.co"
+  },
+  "tags": [
+    {
+      "name": "job-search",
+      "id": "1"
+    },
+    {
+      "name": "analytics",
+      "id": "2"
+    },
+    {
+      "name": "intelligence",
+      "id": "3"
+    }
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "eric-kazee-job-search"
+  },
+  "pinData": {},
+  "versionId": "1.0.0",
+  "triggerCount": 1,
+  "active": false
+}

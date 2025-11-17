@@ -18,11 +18,11 @@ serve(async (req) => {
   try {
     // Get environment variables
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://snmdcbrvvzasubdnnsbd.supabase.co'
+    const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!OPENAI_API_KEY || !SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      throw new Error('Missing required environment variables')
+    if (!OPENAI_API_KEY || !SERVICE_ROLE_KEY) {
+      throw new Error('Missing required environment variables: OPENAI_API_KEY or SUPABASE_SERVICE_ROLE_KEY')
     }
 
     // Parse request
@@ -45,7 +45,7 @@ serve(async (req) => {
     }
 
     // Initialize Supabase client
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
     // Get user from JWT token
     const token = authHeader.replace('Bearer ', '')
@@ -88,30 +88,68 @@ serve(async (req) => {
       )
     }
 
-    // Build prompt for OpenAI
-    const prompt = `You are a professional resume expert. Using the MASTER RESUME and JOB DESCRIPTION below, create a tailored resume and cover letter that highlights the most relevant experience and skills for this specific position.
+    // Get cover letter template if available
+    const { data: coverTemplate } = await supabase
+      .from('resume_versions')
+      .select('cover_letter_md')
+      .eq('user_id', user.id)
+      .eq('label', 'Cover Letter Template')
+      .single()
+
+    // Build enhanced prompt for OpenAI
+    const prompt = `You are a professional resume expert and career consultant. Using the MASTER RESUME, COVER LETTER TEMPLATE, and JOB DESCRIPTION below, create a tailored resume and personalized cover letter for this specific position.
 
 JOB DETAILS:
 Company: ${job.company}
 Role: ${job.role}
 Location: ${job.location || 'Not specified'}
 Description: ${job.description || 'No description provided'}
+Job URL: ${job.url || 'Not provided'}
 
 MASTER RESUME:
 ${masterResume.resume_md || ''}
 
+COVER LETTER TEMPLATE SYSTEM:
+${coverTemplate?.cover_letter_md || `Use this fallback structure:
+1. Opening Hook - Match to role type (AI Implementation/Enablement, Product/Program Management, Governance/Risk, or Technical/Web3)
+2. Core Value Proposition - Technical validation + Adoption expertise + Governance mindset
+3. Relevant Experience - Choose 2-3 bullets most relevant to this job
+4. Why This Company - Research-based customization (use any company info you can infer)
+5. Professional Closing - Call to action
+
+Key metrics to include: 80% operational reduction, 70%+ user retention, 30-50% faster proficiency, 60% cost reduction.`}
+
 INSTRUCTIONS:
-1. Tailor the resume to emphasize experience and skills most relevant to this job
-2. Use keywords from the job description naturally throughout the resume
-3. Maintain professional formatting and structure
-4. Create a compelling cover letter that shows genuine interest in this specific role
-5. Keep the same contact information and overall career timeline
-6. Focus on achievements and quantifiable results where possible
+1. **Resume Tailoring:**
+   - Emphasize experience and skills most relevant to this specific job
+   - Use keywords from the job description naturally throughout
+   - Maintain professional formatting and Eric's proven track record
+   - Focus on quantifiable achievements (80% reduction, 70%+ retention, etc.)
+   - Keep contact information and career timeline consistent
+
+2. **Cover Letter Creation:**
+   - Follow the template structure if provided, otherwise use fallback structure
+   - Select the opening hook that matches this role type:
+     * AI Implementation/Enablement: Focus on building systems + scaling adoption
+     * Product/Program Management: Focus on bridging capability with adoption
+     * Governance/Risk: Focus on secure systems + compliance
+     * Technical/Web3: Focus on production systems + autonomous operations
+   - Choose 2-3 experience bullets most relevant to job requirements
+   - Research-based company customization (infer from company name, role, description)
+   - Include specific metrics: 80%, 70%+, 30-50%, 60%
+   - Professional but confident tone, 350-450 words
+
+3. **Quality Standards:**
+   - Use Eric's exact achievements and metrics from master resume
+   - Maintain consistent voice and professional tone
+   - Ensure cover letter feels personalized, not templated
+   - Include at least one company-specific detail if possible
 
 Return your response as a JSON object with these exact keys:
 {
   "tailored_resume": "The complete tailored resume in markdown format",
-  "cover_letter": "A personalized cover letter for this specific job"
+  "cover_letter": "A personalized cover letter following the template structure",
+  "match_analysis": "Brief analysis of how Eric's background aligns with this role"
 }`
 
     // Call OpenAI API
@@ -146,7 +184,8 @@ Return your response as a JSON object with these exact keys:
     const jsonMatch = content.match(/\{[\s\S]*\}$/)
     const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {
       tailored_resume: content,
-      cover_letter: ''
+      cover_letter: '',
+      match_analysis: 'Analysis not available'
     }
 
     // Save tailored resume version

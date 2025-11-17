@@ -1,0 +1,489 @@
+{
+  "name": "Market Intelligence (Corrected)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "dayOfWeek",
+              "dayOfWeek": 1
+            },
+            {
+              "field": "hour",
+              "hour": 9
+            },
+            {
+              "field": "minute",
+              "minute": 0
+            }
+          ]
+        },
+        "timezone": "America/Chicago"
+      },
+      "id": "cron-weekly",
+      "name": "Weekly Analysis (Mon 9AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "getAll",
+        "tableId": "job_applications",
+        "options": {
+          "queryName": "user_id",
+          "queryValue": "542413a9-b564-423c-96c9-99d51cc01107",
+          "additionalFields": {
+            "orderBy": "created_at.desc"
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "get-apps",
+      "name": "Get All Applications Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items('Get All Applications Data').length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-data",
+      "name": "Check Data Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "no-data",
+      "name": "No Data Summary",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        840,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\ntry {\n  const apps=$items('Get All Applications Data');\n  const stats={};\n  apps.forEach(item=>{\n    const data=item.json;\n    const source=data.source || 'Unknown';\n    if(!stats[source]){\n      stats[source]={total:0,interviewed:0,rejected:0,in_review:0,applied:0,avg_score:0,score_total:0,score_count:0};\n    }\n    const info=stats[source];\n    info.total++;\n    const status=(data.application_status||'').toLowerCase();\n    if(status.includes('interview')) info.interviewed++;\n    else if(status==='rejected') info.rejected++;\n    else if(status==='in review' || status==='info requested') info.in_review++;\n    else if(status==='applied') info.applied++;\n    if(typeof data.ai_score==='number'){info.score_total+=data.ai_score;info.score_count++;}\n  });\n  Object.keys(stats).forEach(key=>{\n    const info=stats[key];\n    info.success_rate=info.total?((info.interviewed/info.total)*100).toFixed(1):'0.0';\n    info.avg_score=info.score_count?(info.score_total/info.score_count).toFixed(1):'0.0';\n  });\n  return [{json:{source_analysis:stats,total_applications:apps.length}}];\n} catch (error) {\n  return [{json:{source_analysis:{},total_applications:0,error:error.message}}];\n}\n"
+      },
+      "id": "analyze-sources",
+      "name": "Analyze Source Performance",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\ntry {\n  const apps=$items('Get All Applications Data');\n  const roleData={};\n  const regex=/\\$([0-9,]+)(?:\\s?-\\s?\\$?([0-9,]+))?/gi;\n  apps.forEach(item=>{\n    const text=((item.json.description||'')+' '+(item.json.title||'')).toLowerCase();\n    const match=regex.exec(text);\n    if(match){\n      const category=item.json.title?.toLowerCase().includes('engineer')?'Engineering':'Other';\n      if(!roleData[category]) roleData[category]={count:0,examples:[],avg_score:0,total_score:0};\n      const info=roleData[category];\n      info.count++;\n      info.examples.push({company:item.json.company,title:item.json.title,salary:match[0]});\n      if(typeof item.json.ai_score==='number'){info.total_score+=item.json.ai_score;}\n    }\n  });\n  Object.keys(roleData).forEach(key=>{\n    const d=roleData[key];\n    d.avg_score=d.count?(d.total_score/d.count).toFixed(1):'0.0';\n  });\n  return [{json:{salary_trends:roleData,total_with_salary:Object.values(roleData).reduce((acc,c)=>acc+c.count,0)}}];\n} catch(error){\n  return [{json:{salary_trends:{},total_with_salary:0,error:error.message}}];\n}\n"
+      },
+      "id": "salary-trends",
+      "name": "Track Salary Trends",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\ntry {\n  const apps=$items('Get All Applications Data');\n  const keywords=['ai','machine learning','python','javascript','aws','azure','data'];\n  const skills={};\n  apps.forEach(item=>{\n    const text=((item.json.description||'')+' '+(item.json.title||'')).toLowerCase();\n    keywords.forEach(skill=>{\n      if(text.includes(skill)){\n        if(!skills[skill]) skills[skill]={count:0,high_score:0};\n        skills[skill].count++;\n        if((item.json.ai_score||0)>=8) skills[skill].high_score++;\n      }\n    });\n  });\n  const trending=Object.entries(skills).map(([skill,data])=>({skill,demand:((data.count/apps.length)||0)*100,high_score:data.high_score})).sort((a,b)=>b.demand-a.demand).slice(0,10);\n  return [{json:{trending_skills:trending}}];\n} catch(error){\n  return [{json:{trending_skills:[],error:error.message}}];\n}\n"
+      },
+      "id": "skill-analysis",
+      "name": "Analyze Skill Demand",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a data-driven career strategist. Provide actionable recommendations."
+            },
+            {
+              "role": "user",
+              "content": "Source Analysis:\n{{ JSON.stringify($('Analyze Source Performance').item.json.source_analysis) }}\nSalary Trends:\n{{ JSON.stringify($('Track Salary Trends').item.json.salary_trends) }}\nSkill Trends:\n{{ JSON.stringify($('Analyze Skill Demand').item.json.trending_skills) }}"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 1500
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "Nxhi8S379cY9Cz7s",
+          "name": "Anthropic Claude"
+        }
+      },
+      "id": "recommend",
+      "name": "Generate Strategic Recommendations",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\ntry {\n  const source=$('Analyze Source Performance').item.json;\n  const salary=$('Track Salary Trends').item.json;\n  const skills=$('Analyze Skill Demand').item.json;\n  const rec=$('Generate Strategic Recommendations').first().json.content || 'Recommendations unavailable.';\n  const dashboard={\n    generated_at:new Date().toISOString(),\n    summary:{\n      total_applications:source.total_applications || 0,\n      active_sources:Object.keys(source.source_analysis||{}).length,\n      salary_data_points:salary.total_with_salary || 0,\n      trending_skills_count:(skills.trending_skills||[]).length\n    },\n    source_analysis:source.source_analysis || {},\n    salary_trends:salary.salary_trends || {},\n    skill_trends:skills.trending_skills || [],\n    recommendations:rec\n  };\n  return [{json:{dashboard}}];\n} catch(error){\n  return [{json:{dashboard:{error:error.message}}}];\n}\n"
+      },
+      "id": "create-dashboard",
+      "name": "Create Dashboard Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "sql",
+        "operation": "executeQuery",
+        "query": "CREATE TABLE IF NOT EXISTS market_analytics (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL, analysis_date TIMESTAMPTZ DEFAULT NOW(), period TEXT DEFAULT 'weekly', dashboard_data JSONB, total_applications INTEGER, best_source TEXT, top_skill TEXT, recommendations TEXT, created_at TIMESTAMPTZ DEFAULT NOW());"
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "ensure-table",
+      "name": "Ensure Analytics Table",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "create",
+        "tableId": "market_analytics",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "user_id",
+              "fieldValue": "542413a9-b564-423c-96c9-99d51cc01107"
+            },
+            {
+              "fieldName": "period",
+              "fieldValue": "weekly"
+            },
+            {
+              "fieldName": "dashboard_data",
+              "fieldValue": "={{ JSON.stringify($('Create Dashboard Data').item.json.dashboard || {}) }}"
+            },
+            {
+              "fieldName": "total_applications",
+              "fieldValue": "={{ $('Analyze Source Performance').item.json.total_applications || 0 }}"
+            },
+            {
+              "fieldName": "best_source",
+              "fieldValue": "={{ Object.keys($('Analyze Source Performance').item.json.source_analysis || {}).shift() || 'N/A' }}"
+            },
+            {
+              "fieldName": "top_skill",
+              "fieldValue": "={{ ($('Analyze Skill Demand').item.json.trending_skills || [])[0]?.skill || 'N/A' }}"
+            },
+            {
+              "fieldName": "recommendations",
+              "fieldValue": "={{ $('Create Dashboard Data').item.json.dashboard?.recommendations || '' }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "save-analytics",
+      "name": "Save Analytics to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst dashboard=$('Create Dashboard Data').item.json.dashboard || { summary:{} };\nconst summary=dashboard.summary || {};\nconst report=`\ud83d\udcca Weekly Market Intelligence\n\nTotal Applications: ${summary.total_applications || 0}\nActive Sources: ${summary.active_sources || 0}\nSalary Data Points: ${summary.salary_data_points || 0}\nTrending Skills: ${summary.trending_skills_count || 0}\n\nRecommendations:\n${dashboard.recommendations || 'Review data sources for insights.'}`;\nreturn [{json:{report,dashboard}}];\n"
+      },
+      "id": "exec-report",
+      "name": "Generate Executive Report",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst dashboard=$json.dashboard || {};\nconst data=Buffer.from(JSON.stringify(dashboard,null,2)).toString('base64');\nreturn [{json:$json,binary:{dashboard:{data,mimeType:'application/json',fileName:`market_intelligence_${$now.format('YYYY-MM-DD')}.json`}}}];\n"
+      },
+      "id": "prepare-attachment",
+      "name": "Prepare Dashboard Attachment",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2140,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "ekazee.careers@gmail.com",
+        "subject": "\ud83d\udcca Weekly Market Intelligence - {{ $now.format('MMMM Do, YYYY') }}",
+        "emailType": "text",
+        "message": "={{ $('Generate Executive Report').item.json.report }}",
+        "options": {
+          "attachmentsBinary": [
+            {
+              "property": "dashboard",
+              "fileName": "market_intelligence_{{ $now.format('YYYY-MM-DD') }}.json"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Intelligence Report",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        2360,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Weekly Analysis (Mon 9AM)": {
+      "main": [
+        [
+          {
+            "node": "Get All Applications Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Applications Data": {
+      "main": [
+        [
+          {
+            "node": "Check Data Exists",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Data Exists": {
+      "main": [
+        [
+          {
+            "node": "Analyze Source Performance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Track Salary Trends",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Analyze Skill Demand",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Data Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Source Performance": {
+      "main": [
+        [
+          {
+            "node": "Create Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track Salary Trends": {
+      "main": [
+        [
+          {
+            "node": "Create Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Skill Demand": {
+      "main": [
+        [
+          {
+            "node": "Generate Strategic Recommendations",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Dashboard Data": {
+      "main": [
+        [
+          {
+            "node": "Ensure Analytics Table",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Executive Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ensure Analytics Table": {
+      "main": [
+        [
+          {
+            "node": "Save Analytics to Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Analytics to Supabase": {
+      "main": [
+        [
+          {
+            "node": "Generate Executive Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Executive Report": {
+      "main": [
+        [
+          {
+            "node": "Prepare Dashboard Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Dashboard Attachment": {
+      "main": [
+        [
+          {
+            "node": "Send Intelligence Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Strategic Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Create Dashboard Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "staticData": {},
+  "meta": {
+    "instanceId": "n8n-local"
+  },
+  "id": "market-intelligence-corrected",
+  "tags": []
+}

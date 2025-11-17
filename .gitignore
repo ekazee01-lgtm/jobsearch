@@ -224,3 +224,21 @@ job_listings/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test files and debugging
+debug-*.png
+demo-*.png
+simple-test-*.png
+selector-validation-*.png
+test-user-creation.png
+mock-test-*.png
+playwright-report/
+test-results/
+.env.test
+
+# Node.js
+node_modules/
+
+# Temporary files
+supabase/.temp/
+assets/

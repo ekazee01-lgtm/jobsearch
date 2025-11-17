@@ -1,0 +1,433 @@
+{
+  "name": "Status Monitoring with Full Calendar Integration",
+  "version": 1,
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "filters": {
+          "sender": "",
+          "subject": "",
+          "readStatus": "unread"
+        },
+        "format": "simple",
+        "downloadAttachments": false
+      },
+      "id": "gmail-trigger",
+      "name": "Gmail Trigger - Monitor New Emails",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 2,
+      "position": [
+        260,
+        300
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail - Job Search Automation"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Enhanced email classification\nconst emailContent = {\n  from: $json.from,\n  subject: $json.subject,\n  body: $json.textPlain || $json.snippet,\n  date: $json.date,\n  messageId: $json.id\n};\n\n// Check if this is job-search related\nconst jobSearchKeywords = [\n  'interview', 'schedule', 'available', 'calendar',\n  'position', 'role', 'application', 'candidate',\n  'recruiter', 'talent', 'careers', 'hiring',\n  'opportunity', 'interested', 'next steps'\n];\n\nconst isJobRelated = jobSearchKeywords.some(keyword => \n  emailContent.subject.toLowerCase().includes(keyword) ||\n  emailContent.body.toLowerCase().includes(keyword) ||\n  emailContent.from.toLowerCase().includes(keyword)\n);\n\nif (!isJobRelated) {\n  return { skipEmail: true, reason: 'Not job search related' };\n}\n\nreturn {\n  ...emailContent,\n  needsAIAnalysis: true\n};"
+      },
+      "id": "filter-job-emails",
+      "name": "Filter Job-Related Emails",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "skip-condition",
+              "leftValue": "={{ $json.skipEmail }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "skip-non-job-emails",
+      "name": "Skip Non-Job Emails",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "anthropicApi",
+        "resource": "message",
+        "operation": "create",
+        "model": "claude-3-sonnet-20240229",
+        "prompt": "=Analyze this job-search related email and classify it:\n\nFrom: {{ $json.from }}\nSubject: {{ $json.subject }}\nBody: {{ $json.body }}\n\nClassify this email into one of these categories:\n1. INTERVIEW_REQUEST - Someone wants to schedule an interview\n2. REJECTION - Application was declined  \n3. ACKNOWLEDGMENT - Application was received\n4. INFO_REQUEST - They need additional information\n5. OFFER - Job offer or next round invitation\n6. OTHER - Something else job-related\n\nIf it's an INTERVIEW_REQUEST, also extract:\n- Company name\n- Position title\n- Contact person name\n- Any time constraints mentioned\n- Urgency level (low/medium/high)\n\nReturn ONLY a JSON object with this structure:\n{\n  \"category\": \"INTERVIEW_REQUEST\",\n  \"confidence\": 95,\n  \"company\": \"Company Name\",\n  \"position\": \"Job Title\", \n  \"contact_person\": \"Name\",\n  \"time_constraints\": \"any mentioned constraints\",\n  \"urgency\": \"medium\",\n  \"reasoning\": \"why you classified it this way\"\n}",
+        "options": {
+          "maxTokens": 500
+        }
+      },
+      "id": "classify-email",
+      "name": "Classify Email with Claude",
+      "type": "n8n-nodes-base.anthropic",
+      "typeVersion": 1,
+      "position": [
+        920,
+        200
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "Nxhi8S379cY9Cz7s",
+          "name": "Anthropic Claude API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse Claude's response\nlet analysis;\ntry {\n  const responseText = $json.content || $json.text || $json.response;\n  analysis = JSON.parse(responseText);\n} catch (error) {\n  analysis = {\n    category: 'OTHER',\n    confidence: 50,\n    reasoning: 'Failed to parse AI response: ' + error.message\n  };\n}\n\n// Get original email data\nconst originalEmail = $('Filter Job-Related Emails').item.json;\n\nconst result = {\n  ...analysis,\n  originalEmail: originalEmail,\n  processedAt: new Date().toISOString()\n};\n\nreturn result;"
+      },
+      "id": "parse-classification",
+      "name": "Parse Classification Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "interview-request-condition",
+              "leftValue": "={{ $json.category }}",
+              "rightValue": "INTERVIEW_REQUEST",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "check-interview-request",
+      "name": "Is Interview Request?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getFreeBusy",
+        "timeMin": "={{ DateTime.now().toISO() }}",
+        "timeMax": "={{ DateTime.now().plus({days: 14}).toISO() }}",
+        "calendarId": "primary"
+      },
+      "id": "check-calendar-availability",
+      "name": "Check Calendar Availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 2,
+      "position": [
+        1580,
+        100
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "COkggL1TjW7pqnxD",
+          "name": "Google Calendar API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate 3 available interview time slots based on calendar availability\nconst now = new Date();\nconst busyTimes = $json.calendars?.primary?.busy || [];\n\n// Helper function to check if a time slot conflicts with busy periods\nfunction isTimeSlotFree(startTime, endTime) {\n  const start = new Date(startTime);\n  const end = new Date(endTime);\n  \n  return !busyTimes.some(busy => {\n    const busyStart = new Date(busy.start);\n    const busyEnd = new Date(busy.end);\n    \n    // Check if there's any overlap\n    return (start < busyEnd && end > busyStart);\n  });\n}\n\n// Helper function to format date/time\nfunction formatSlot(date) {\n  const options = { \n    weekday: 'long', \n    year: 'numeric', \n    month: 'long', \n    day: 'numeric', \n    hour: 'numeric', \n    minute: '2-digit',\n    timeZoneName: 'short'\n  };\n  return date.toLocaleDateString('en-US', options);\n}\n\n// Generate business days and time slots\nconst availableSlots = [];\nlet currentDate = new Date(now);\ncurrentDate.setDate(currentDate.getDate() + 1); // Start tomorrow\n\n// Preferred time slots: 10 AM, 2 PM, 4 PM\nconst preferredHours = [10, 14, 16];\n\nfor (let days = 0; days < 14 && availableSlots.length < 10; days++) {\n  const dayOfWeek = currentDate.getDay();\n  \n  // Skip weekends\n  if (dayOfWeek !== 0 && dayOfWeek !== 6) {\n    for (const hour of preferredHours) {\n      const slotStart = new Date(currentDate);\n      slotStart.setHours(hour, 0, 0, 0);\n      \n      const slotEnd = new Date(slotStart);\n      slotEnd.setHours(hour + 1, 0, 0, 0); // 1 hour duration\n      \n      if (isTimeSlotFree(slotStart, slotEnd)) {\n        availableSlots.push({\n          startTime: slotStart,\n          endTime: slotEnd,\n          formatted: formatSlot(slotStart),\n          hour: hour,\n          day: currentDate.toDateString()\n        });\n      }\n    }\n  }\n  \n  currentDate.setDate(currentDate.getDate() + 1);\n}\n\n// Select 3 diverse slots (different days, different times)\nconst selectedSlots = [];\nconst usedDays = new Set();\nconst usedHours = new Set();\n\nfor (const slot of availableSlots) {\n  if (selectedSlots.length >= 3) break;\n  \n  const dayKey = slot.day;\n  const hourKey = slot.hour;\n  \n  // Prefer slots on different days and different times\n  if (!usedDays.has(dayKey) || !usedHours.has(hourKey)) {\n    selectedSlots.push(slot);\n    usedDays.add(dayKey);\n    usedHours.add(hourKey);\n  }\n}\n\n// If we don't have 3 slots yet, fill with any available\nwhile (selectedSlots.length < 3 && selectedSlots.length < availableSlots.length) {\n  for (const slot of availableSlots) {\n    if (selectedSlots.length >= 3) break;\n    if (!selectedSlots.some(s => s.startTime.getTime() === slot.startTime.getTime())) {\n      selectedSlots.push(slot);\n    }\n  }\n}\n\n// Get original email and AI analysis data\nconst emailData = $('Parse Classification Result').item.json;\n\nreturn {\n  ...emailData,\n  availableSlots: selectedSlots,\n  totalSlotsFound: availableSlots.length,\n  slotSelectionToken: Math.random().toString(36).substring(2, 15),\n  calendarCheckedAt: new Date().toISOString()\n};"
+      },
+      "id": "generate-smart-time-slots",
+      "name": "Generate Smart Time Slots",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "reply",
+        "messageId": "={{ $json.originalEmail.messageId }}",
+        "subject": "=Re: {{ $json.originalEmail.subject }}",
+        "message": "=Hi {{ $json.contact_person || 'there' }},\n\nThank you for your interest in my application for the {{ $json.position || 'position' }} at {{ $json.company || 'your company' }}!\n\nI'm very excited about this opportunity and would love to schedule the interview. Based on my current availability, I can offer the following times:\n\n**Option 1:** {{ $json.availableSlots[0]?.formatted || 'Tomorrow 10:00 AM' }}\n**Option 2:** {{ $json.availableSlots[1]?.formatted || 'Day after tomorrow 2:00 PM' }}\n**Option 3:** {{ $json.availableSlots[2]?.formatted || 'Next week 4:00 PM' }}\n\nPlease let me know which option works best for your team, and I'll send a calendar invitation right away.\n\nI'm looking forward to discussing how my experience in AI adoption and legal technology can contribute to {{ $json.company || 'your company' }}'s goals.\n\nBest regards,\nEric Kazee\nPhone: (your-phone-number)\nEmail: ekazee@outlook.com\n\n---\nRef: {{ $json.slotSelectionToken }}"
+      },
+      "id": "send-auto-reply",
+      "name": "Send Auto-Reply with 3 Options",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        2020,
+        100
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail - Job Search Automation"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "interview_schedule",
+        "columns": "company,position,contact_person,recruiter_email,interview_type,selection_token,status,notes,created_at",
+        "columnValues": {
+          "company": "={{ $json.company || 'Unknown Company' }}",
+          "position": "={{ $json.position || 'Unknown Position' }}",
+          "contact_person": "={{ $json.contact_person || 'Unknown Contact' }}",
+          "recruiter_email": "={{ $json.originalEmail.from }}",
+          "interview_type": "video",
+          "selection_token": "={{ $json.slotSelectionToken }}",
+          "status": "options_sent",
+          "notes": "Auto-generated 3 time slot options based on calendar availability",
+          "created_at": "NOW()"
+        }
+      },
+      "id": "log-interview-request",
+      "name": "Log Interview Request to Database",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        100
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "communication_history",
+        "columns": "direction,channel,email_from,email_to,email_subject,email_body,sentiment,response_type,classification_confidence,auto_replied,selection_token,created_at",
+        "columnValues": {
+          "direction": "inbound",
+          "channel": "email",
+          "email_from": "={{ $json.originalEmail.from }}",
+          "email_to": "ekazee@outlook.com",
+          "email_subject": "={{ $json.originalEmail.subject }}",
+          "email_body": "={{ $json.originalEmail.body }}",
+          "sentiment": "positive",
+          "response_type": "interview_request",
+          "classification_confidence": "={{ $json.confidence || 85 }}",
+          "auto_replied": true,
+          "selection_token": "={{ $json.slotSelectionToken }}",
+          "created_at": "NOW()"
+        }
+      },
+      "id": "log-communication",
+      "name": "Log Communication History",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2240,
+        300
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "communication_history",
+        "columns": "direction,channel,email_from,email_to,email_subject,response_type,created_at",
+        "columnValues": {
+          "direction": "inbound",
+          "channel": "email",
+          "email_from": "={{ $json.originalEmail.from }}",
+          "email_to": "ekazee@outlook.com",
+          "email_subject": "={{ $json.originalEmail.subject }}",
+          "response_type": "={{ $json.category.toLowerCase() }}",
+          "created_at": "NOW()"
+        }
+      },
+      "id": "log-other-emails",
+      "name": "Log Other Email Types",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1360,
+        400
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Gmail Trigger - Monitor New Emails": {
+      "main": [
+        [
+          {
+            "node": "Filter Job-Related Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Job-Related Emails": {
+      "main": [
+        [
+          {
+            "node": "Skip Non-Job Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Skip Non-Job Emails": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Classify Email with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Email with Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Classification Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Classification Result": {
+      "main": [
+        [
+          {
+            "node": "Is Interview Request?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Interview Request?": {
+      "main": [
+        [
+          {
+            "node": "Check Calendar Availability",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Other Email Types",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Calendar Availability": {
+      "main": [
+        [
+          {
+            "node": "Generate Smart Time Slots",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Smart Time Slots": {
+      "main": [
+        [
+          {
+            "node": "Send Auto-Reply with 3 Options",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Auto-Reply with 3 Options": {
+      "main": [
+        [
+          {
+            "node": "Log Interview Request to Database",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Communication History",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "status-monitoring-calendar-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "status-monitoring-calendar",
+  "tags": []
+}

@@ -1,0 +1,351 @@
+{
+  "name": "Automated Application Submission",
+  "nodes": [
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "executeQuery",
+        "query": "SELECT * FROM job_opportunities WHERE status = 'pending' AND ai_score >= 8 ORDER BY ai_score DESC LIMIT 5"
+      },
+      "name": "Get Pending Jobs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "101"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert resume writer specializing in AI and Legal Technology roles. Tailor Eric's resume for this specific position.\n\nBase Resume Elements:\n- 12+ years legal technology (iManage, NetDocuments, LexisNexis, Aderant)\n- 3+ years AI implementation (ChatGPT, Claude, Harvey AI, Lexis+ AI)\n- Training & adoption expertise\n- Governance & compliance focus\n\nInstructions:\n1. Emphasize most relevant experience\n2. Use keywords from job description\n3. Quantify achievements where possible\n4. Keep to 2 pages max\n\nOutput as JSON with sections: summary, experience, skills"
+            },
+            {
+              "role": "user",
+              "content": "Job Title: {{$json.title}}\nCompany: {{$json.company}}\nDescription: {{$json.description}}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.4
+        }
+      },
+      "name": "Tailor Resume",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [450, 300],
+      "id": "102"
+    },
+    {
+      "parameters": {
+        "model": "gpt-4-turbo-preview",
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "Write a compelling cover letter for Eric Kazee applying to this position.\n\nKey Points to Emphasize:\n- Unique combination of legal tech + AI expertise\n- Proven adoption & training success\n- Understanding of attorney-client privilege in AI context\n- Remote work capabilities\n- Immediate availability\n\nTone: Professional yet personable\nLength: 3 paragraphs\nStructure: Hook, Value proposition, Call to action"
+            },
+            {
+              "role": "user",
+              "content": "Job Title: {{$json.title}}\nCompany: {{$json.company}}\nDescription: {{$json.description}}"
+            }
+          ]
+        },
+        "options": {
+          "temperature": 0.6
+        }
+      },
+      "name": "Generate Cover Letter",
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.3,
+      "position": [450, 450],
+      "id": "103"
+    },
+    {
+      "parameters": {
+        "mode": "humanInTheLoop",
+        "respondTo": "webhook",
+        "responseType": "lastNode",
+        "options": {
+          "message": "Review Application for {{$json.company}}",
+          "fields": [
+            {
+              "name": "approve",
+              "type": "boolean",
+              "label": "Approve Application?"
+            },
+            {
+              "name": "resumeEdits",
+              "type": "text",
+              "label": "Resume Edits (optional)"
+            },
+            {
+              "name": "coverLetterEdits",
+              "type": "text",
+              "label": "Cover Letter Edits (optional)"
+            }
+          ]
+        }
+      },
+      "name": "Human Review",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [650, 375],
+      "id": "104"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{$json.approve}}",
+              "operation": "equal",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Approved?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 1,
+      "position": [850, 375],
+      "id": "105"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine application method and submit\nconst job = $input.item.json;\nconst applicationMethods = [];\n\n// Check for LinkedIn Easy Apply\nif (job.url.includes('linkedin.com')) {\n  applicationMethods.push({\n    method: 'linkedin',\n    action: 'easy_apply',\n    url: job.url\n  });\n}\n\n// Check for company career page\nif (job.application_url) {\n  applicationMethods.push({\n    method: 'direct',\n    action: 'career_page',\n    url: job.application_url\n  });\n}\n\n// Check for email application\nif (job.application_email) {\n  applicationMethods.push({\n    method: 'email',\n    action: 'send_email',\n    email: job.application_email\n  });\n}\n\n// Default to manual if no method found\nif (applicationMethods.length === 0) {\n  applicationMethods.push({\n    method: 'manual',\n    action: 'flag_for_manual',\n    url: job.url\n  });\n}\n\nreturn {\n  ...job,\n  applicationMethods,\n  preferredMethod: applicationMethods[0]\n};"
+      },
+      "name": "Route Application",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 375],
+      "id": "106"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.preferredMethod.method}}",
+              "operation": "equals",
+              "value2": "email"
+            }
+          ]
+        }
+      },
+      "name": "Is Email?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "id": "107"
+    },
+    {
+      "parameters": {
+        "toEmail": "={{$json.application_email}}",
+        "subject": "Application for {{$json.title}} Position - Eric Kazee",
+        "message": "{{$json.coverLetter}}\n\n--\nEric Kazee\nAI Adoption Specialist\n214.728.0973\nekazee@outlook.com\nlinkedin.com/in/erickazee",
+        "attachments": "={{$json.resume}}",
+        "options": {
+          "allowUnauthorizedCerts": true
+        }
+      },
+      "name": "Send Email Application",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [1450, 250],
+      "id": "108"
+    },
+    {
+      "parameters": {
+        "url": "https://api.simplify.jobs/submit",
+        "method": "POST",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "jobUrl",
+              "value": "={{$json.url}}"
+            },
+            {
+              "name": "resume",
+              "value": "={{$json.resume}}"
+            },
+            {
+              "name": "coverLetter",
+              "value": "={{$json.coverLetter}}"
+            }
+          ]
+        }
+      },
+      "name": "Simplify Autofill",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 400],
+      "id": "109"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "update",
+        "table": "job_opportunities",
+        "updateKey": "id",
+        "columns": "status, applied_at, resume_version, cover_letter_version",
+        "additionalFields": {
+          "status": "applied",
+          "applied_at": "={{new Date().toISOString()}}",
+          "resume_version": "={{$json.resumeVersion}}",
+          "cover_letter_version": "={{$json.coverLetterVersion}}"
+        }
+      },
+      "name": "Update Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 325],
+      "id": "110"
+    },
+    {
+      "parameters": {
+        "resource": "database",
+        "operation": "insert",
+        "table": "application_history",
+        "columns": "job_id, action, timestamp, details",
+        "additionalFields": {}
+      },
+      "name": "Log Application",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 450],
+      "id": "111"
+    }
+  ],
+  "connections": {
+    "Get Pending Jobs": {
+      "main": [
+        [
+          {
+            "node": "Tailor Resume",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Cover Letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tailor Resume": {
+      "main": [
+        [
+          {
+            "node": "Human Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Cover Letter": {
+      "main": [
+        [
+          {
+            "node": "Human Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Human Review": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Route Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Application": {
+      "main": [
+        [
+          {
+            "node": "Is Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Email?": {
+      "main": [
+        [
+          {
+            "node": "Send Email Application",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Simplify Autofill",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email Application": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simplify Autofill": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Application",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,1147 @@
+{
+  "name": "Smart Application Engine (Corrected)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minute",
+              "minute": 5
+            }
+          ]
+        },
+        "timezone": "America/Chicago"
+      },
+      "id": "cron-ready",
+      "name": "Poll Ready Jobs (5m)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "getAll",
+        "tableId": "job_applications",
+        "options": {
+          "queryName": "user_id",
+          "queryValue": "542413a9-b564-423c-96c9-99d51cc01107",
+          "additionalFields": {
+            "filters": "application_status=eq.Ready to Apply",
+            "orderBy": "created_at.asc",
+            "limit": "10"
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "supabase-ready",
+      "name": "Get Ready-to-Apply Jobs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $items('Get Ready-to-Apply Jobs').length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "if-jobs",
+      "name": "Jobs Available?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "batchSize": 1
+      },
+      "id": "split-jobs",
+      "name": "Process Each Job",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst jobs = [];\nfor (const item of $input.all()) {\n  jobs.push({\n    json: {\n      job: item.json,\n      job_id: item.json.id,\n      user_id: item.json.user_id || '542413a9-b564-423c-96c9-99d51cc01107',\n      approval_attempt: 0,\n      approval_max_attempts: 12,\n      approval_status: 'pending'\n    }\n  });\n}\nreturn jobs;\n"
+      },
+      "id": "prep-job",
+      "name": "Prepare Job Context",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst fs = require('fs');\nconst resume = fs.readFileSync('C:/Users/ekaze/Github_Job_Search/jobsearch/assets/master-resume.md', 'utf8');\nconst template = fs.readFileSync('C:/Users/ekaze/Github_Job_Search/jobsearch/assets/cover-letter-templates.md', 'utf8');\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    master_resume: resume,\n    cover_template: template\n  }\n}));\n"
+      },
+      "id": "load-templates",
+      "name": "Load Templates",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "resume-context",
+      "name": "Resume Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an expert resume writer. Keep the resume structure but tailor emphasis and keywords to match the job description."
+            },
+            {
+              "role": "user",
+              "content": "Master Resume:\n{{ $json.master_resume }}\n\nJob Details:\nCompany: {{ $json.job.company }}\nTitle: {{ $json.job.title }}\nDescription: {{ $json.job.description }}\n\nCreate a tailored resume in markdown."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 4000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "Nxhi8S379cY9Cz7s",
+          "name": "Anthropic Claude"
+        }
+      },
+      "id": "claude-resume",
+      "name": "Generate Tailored Resume",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return $input.all().map(item => ({ json: { resume_markdown: item.json.content } }));"
+      },
+      "id": "format-resume",
+      "name": "Format Resume Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine"
+      },
+      "id": "merge-resume",
+      "name": "Merge Resume Content",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        1940,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "cover-context",
+      "name": "Cover Context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2160,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "model": "claude-3-5-sonnet-20241022",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You craft personalized cover letters (200-250 words) referencing the provided template instructions."
+            },
+            {
+              "role": "user",
+              "content": "Template System:\n{{ $json.cover_template }}\n\nJob Details:\nCompany: {{ $json.job.company }}\nRole: {{ $json.job.title }}\nDescription: {{ $json.job.description }}\nURL: {{ $json.job.url }}\nResume Highlights:\n{{ $json.resume_markdown }}\n\nWrite a tailored cover letter between 200 and 250 words."
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 2000
+        }
+      },
+      "credentials": {
+        "anthropicApi": {
+          "id": "Nxhi8S379cY9Cz7s",
+          "name": "Anthropic Claude"
+        }
+      },
+      "id": "claude-cover",
+      "name": "Generate Cover Letter",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return $input.all().map(item => ({ json: { cover_letter: item.json.content } }));"
+      },
+      "id": "format-cover",
+      "name": "Format Cover Result",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine"
+      },
+      "id": "merge-cover",
+      "name": "Merge Cover Content",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "create",
+        "tableId": "application_materials",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "user_id",
+              "fieldValue": "542413a9-b564-423c-96c9-99d51cc01107"
+            },
+            {
+              "fieldName": "application_id",
+              "fieldValue": "={{ $json.job_id }}"
+            },
+            {
+              "fieldName": "type",
+              "fieldValue": "resume"
+            },
+            {
+              "fieldName": "content",
+              "fieldValue": "={{ $json.resume_markdown }}"
+            },
+            {
+              "fieldName": "metadata",
+              "fieldValue": "={{ { 'company': $json.job.company, 'title': $json.job.title, 'filename': $json.job.company.replace(/[^a-zA-Z0-9]/g, '') + '_' + $now.format('YYYY-MM-DD') + '_resume.md' } }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "save-resume",
+      "name": "Save Resume Material",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2820,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "create",
+        "tableId": "application_materials",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "user_id",
+              "fieldValue": "542413a9-b564-423c-96c9-99d51cc01107"
+            },
+            {
+              "fieldName": "application_id",
+              "fieldValue": "={{ $json.job_id }}"
+            },
+            {
+              "fieldName": "type",
+              "fieldValue": "cover_letter"
+            },
+            {
+              "fieldName": "content",
+              "fieldValue": "={{ $json.cover_letter }}"
+            },
+            {
+              "fieldName": "metadata",
+              "fieldValue": "={{ { 'company': $json.job.company, 'title': $json.job.title, 'filename': $json.job.company.replace(/[^a-zA-Z0-9]/g, '') + '_' + $now.format('YYYY-MM-DD') + '_cover.md' } }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "save-cover",
+      "name": "Save Cover Material",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        3040,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nreturn $input.all().map(item => {\n  const pdfText = `Resume for ${item.json.job.company} - ${item.json.job.title}\n\n` + item.json.resume_markdown;\n  const header = \"%PDF-1.1\\n\";\n  const body = \"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\\n\" +\n               \"2 0 obj<</Type/Pages/Count 1/Kids[3 0 R]>>endobj\\n\" +\n               \"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj\\n\" +\n               \"4 0 obj<</Length \"+pdfText.length+\">>stream\\nBT /F1 12 Tf 72 720 Td (\" + pdfText.replace(/([\\\\()])/g, \"\\\\$1\") + \") Tj ET\\nendstream endobj\\n\" +\n               \"5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\\n\" +\n               \"xref\\n0 6\\n0000000000 65535 f\\n0000000010 00000 n\\n0000000053 00000 n\\n0000000104 00000 n\\n0000000215 00000 n\\n0000000332 00000 n\\n\" +\n               \"trailer<</Size 6/Root 1 0 R>>\\nstartxref\\n\" + (header.length + body.length) + \"\\n%%EOF\";\n  const pdf = header + body;\n  return {\n    json: item.json,\n    binary: {\n      resume_pdf: {\n        data: Buffer.from(pdf).toString('base64'),\n        mimeType: 'application/pdf',\n        fileName: `${item.json.job.company.replace(/[^a-zA-Z0-9]/g, '')}_${$now.format('YYYYMMDD')}_resume.pdf`\n      }\n    }\n  };\n});\n"
+      },
+      "id": "resume-pdf",
+      "name": "Create Resume PDF",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3260,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "ekazee.careers@gmail.com",
+        "subject": "Approval Needed: {{ $json.job.company }} - {{ $json.job.title }}",
+        "emailType": "html",
+        "message": "\n<h2>Application Materials Ready</h2>\n<p><strong>Company:</strong> {{ $json.job.company }}</p>\n<p><strong>Role:</strong> {{ $json.job.title }}</p>\n<p><strong>AI Score:</strong> {{ $json.job.ai_score }}</p>\n<h3>Resume Preview</h3>\n<pre>{{ $json.resume_markdown.substring(0, 600) }}...</pre>\n<h3>Cover Letter</h3>\n<pre>{{ $json.cover_letter }}</pre>\n<p>Reply with <strong>APPROVE: {{ $json.job.company }}</strong> or <strong>REJECT: {{ $json.job.company }}</strong>.</p>\n",
+        "options": {
+          "attachmentsBinary": [
+            {
+              "property": "resume_pdf",
+              "fileName": "Eric_Kazee_Resume.pdf"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "send-approval",
+      "name": "Send Approval Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        3480,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "return $input.all().map(item => ({ json: { ...item.json, approval_attempt: 0, approval_status: 'pending' } }));"
+      },
+      "id": "init-approval",
+      "name": "Init Approval Loop",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        3700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "getAll",
+        "returnAll": false,
+        "limit": 3,
+        "filters": {
+          "q": "={{ 'subject:(APPROVE ' + $json.job.company + ') OR subject:(REJECT ' + $json.job.company + ') newer_than:2d' }}"
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "check-approval",
+      "name": "Check Approval Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        3920,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nconst responses = $items('Check Approval Gmail');\nlet status = 'pending';\nlet targetEmail = null;\nif (responses.length > 0) {\n  const subject = responses[0].json.subject || '';\n  const snippet = responses[0].json.snippet || '';\n  if (subject.toUpperCase().includes('APPROVE')) {\n    status = 'approved';\n  } else if (subject.toUpperCase().includes('REJECT')) {\n    status = 'rejected';\n  }\n  const emailMatch = snippet.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/);\n  if (emailMatch) {\n    targetEmail = emailMatch[1];\n  }\n}\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    approval_status: status,\n    target_email: targetEmail || item.json.job.contact_email || ('hr@' + item.json.job.company.toLowerCase().replace(/[^a-z0-9]/g, '') + '.com')\n  }\n}));\n"
+      },
+      "id": "eval-approval",
+      "name": "Evaluate Approval",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        4140,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.approval_status }}",
+              "operation": "equals",
+              "value2": "approved"
+            }
+          ]
+        }
+      },
+      "id": "if-approved",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        4360,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.approval_status }}",
+              "operation": "equals",
+              "value2": "rejected"
+            }
+          ]
+        }
+      },
+      "id": "if-rejected",
+      "name": "Rejected?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        4360,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "\nreturn $input.all().map(item => ({\n  json: {\n    ...item.json,\n    approval_attempt: item.json.approval_attempt + 1,\n    should_retry: item.json.approval_attempt + 1 < item.json.approval_max_attempts\n  }\n}));\n"
+      },
+      "id": "increment-attempt",
+      "name": "Increment Attempt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        4580,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_retry }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-retry",
+      "name": "Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        4800,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resume": false,
+        "options": {
+          "waitSeconds": 300
+        }
+      },
+      "id": "approval-wait",
+      "name": "Wait 5 Minutes",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        5020,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.target_email }}",
+        "subject": "Application for {{ $json.job.title }} - Eric Kazee",
+        "emailType": "text",
+        "message": "={{ $json.cover_letter }}\n\n---\nPlease see attached tailored resume.\n\nEric Kazee\nekazee.careers@gmail.com\n214-728-0973",
+        "options": {
+          "attachmentsBinary": [
+            {
+              "property": "resume_pdf",
+              "fileName": "Eric_Kazee_Resume.pdf"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s4gUV9BG9H4CTxYF",
+          "name": "Gmail account"
+        }
+      },
+      "id": "send-application",
+      "name": "Send Application Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 1,
+      "position": [
+        4580,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "update",
+        "tableId": "job_applications",
+        "filterType": "manual",
+        "filtersUi": {
+          "filterValues": [
+            {
+              "key": "id",
+              "condition": "equals",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "application_status",
+              "fieldValue": "Applied"
+            },
+            {
+              "fieldName": "updated_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "update-status",
+      "name": "Update Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4800,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "update",
+        "tableId": "job_applications",
+        "filterType": "manual",
+        "filtersUi": {
+          "filterValues": [
+            {
+              "key": "id",
+              "condition": "equals",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "application_status",
+              "fieldValue": "Rejected by User"
+            },
+            {
+              "fieldName": "updated_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "mark-rejected",
+      "name": "Update as Rejected",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        4580,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "serviceAccount",
+        "resource": "rows",
+        "operation": "update",
+        "tableId": "job_applications",
+        "filterType": "manual",
+        "filtersUi": {
+          "filterValues": [
+            {
+              "key": "id",
+              "condition": "equals",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "application_status",
+              "fieldValue": "Awaiting Approval"
+            },
+            {
+              "fieldName": "updated_at",
+              "fieldValue": "={{ $now }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "mark-timeout",
+      "name": "Mark Approval Timeout",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        5020,
+        540
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "loop-complete",
+      "name": "Job Loop Complete",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        5020,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "jobs-finished",
+      "name": "All Jobs Processed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        520
+      ]
+    }
+  ],
+  "connections": {
+    "Poll Ready Jobs (5m)": {
+      "main": [
+        [
+          {
+            "node": "Get Ready-to-Apply Jobs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Ready-to-Apply Jobs": {
+      "main": [
+        [
+          {
+            "node": "Jobs Available?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Jobs Available?": {
+      "main": [
+        [
+          {
+            "node": "Process Each Job",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "All Jobs Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Each Job": {
+      "main": [
+        [
+          {
+            "node": "Prepare Job Context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "All Jobs Processed",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Prepare Job Context": {
+      "main": [
+        [
+          {
+            "node": "Load Templates",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Templates": {
+      "main": [
+        [
+          {
+            "node": "Resume Context",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Tailored Resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Resume Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Tailored Resume": {
+      "main": [
+        [
+          {
+            "node": "Format Resume Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Resume Result": {
+      "main": [
+        [
+          {
+            "node": "Merge Resume Content",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Resume Content": {
+      "main": [
+        [
+          {
+            "node": "Cover Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cover Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Cover Content",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Generate Cover Letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Cover Letter": {
+      "main": [
+        [
+          {
+            "node": "Format Cover Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Cover Result": {
+      "main": [
+        [
+          {
+            "node": "Merge Cover Content",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Cover Content": {
+      "main": [
+        [
+          {
+            "node": "Save Resume Material",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Resume Material": {
+      "main": [
+        [
+          {
+            "node": "Save Cover Material",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Cover Material": {
+      "main": [
+        [
+          {
+            "node": "Create Resume PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Resume PDF": {
+      "main": [
+        [
+          {
+            "node": "Send Approval Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Approval Email": {
+      "main": [
+        [
+          {
+            "node": "Init Approval Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Approval Loop": {
+      "main": [
+        [
+          {
+            "node": "Check Approval Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Approval Gmail": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Send Application Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Rejected?",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Rejected?": {
+      "main": [
+        [
+          {
+            "node": "Update as Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Increment Attempt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Application Email": {
+      "main": [
+        [
+          {
+            "node": "Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status": {
+      "main": [
+        [
+          {
+            "node": "Job Loop Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update as Rejected": {
+      "main": [
+        [
+          {
+            "node": "Job Loop Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Increment Attempt": {
+      "main": [
+        [
+          {
+            "node": "Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retry?": {
+      "main": [
+        [
+          {
+            "node": "Wait 5 Minutes",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Approval Timeout",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Check Approval Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Approval Timeout": {
+      "main": [
+        [
+          {
+            "node": "Job Loop Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Job Loop Complete": {
+      "main": [
+        [
+          {
+            "node": "Process Each Job",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "staticData": {},
+  "meta": {
+    "instanceId": "n8n-local"
+  },
+  "id": "smart-application-engine-corrected",
+  "tags": []
+}
