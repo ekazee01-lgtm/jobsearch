@@ -52,21 +52,36 @@ const result = await aiFeatures.tailorResume(jobId, userId);
 ```
 
 ### Backend Processing
-Edge Functions handle all AI operations:
+Edge Functions handle all AI operations. Model selection follows a tiered strategy:
 
 ```typescript
-// Secure server-side processing
-const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+// Generation (resume/cover letter) — Anthropic direct with prompt caching
+const claudeResponse = await fetch('https://api.anthropic.com/v1/messages', {
   headers: {
-    'Authorization': `Bearer ${OPENAI_API_KEY}`, // Server-side only
-    'Content-Type': 'application/json'
+    'x-api-key': ANTHROPIC_API_KEY,        // Server-side only
+    'anthropic-version': '2023-06-01',
+    'content-type': 'application/json'
   },
   body: JSON.stringify({
-    model: 'gpt-4o-mini',
+    model: 'claude-sonnet-4-6',
+    max_tokens: 4000,
+    system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
     messages: [{ role: 'user', content: prompt }]
   })
 });
+
+// Scoring (1-10 match) — Haiku or OpenRouter cheap model
+const scoringResponse = await fetch(AI_SCORING_BASE_URL + '/v1/messages', {
+  headers: { 'x-api-key': AI_SCORING_KEY, 'anthropic-version': '2023-06-01' },
+  body: JSON.stringify({
+    model: AI_SCORING_MODEL, // e.g. claude-haiku-4-5-20251001
+    max_tokens: 50,
+    messages: [{ role: 'user', content: scoringPrompt }]
+  })
+});
 ```
+
+Both models are configurable via environment variables — swap without code changes.
 
 ## User Experience
 
@@ -122,10 +137,11 @@ const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions',
 
 ## Cost Analysis
 
-### OpenAI Usage
-- **Model**: GPT-4o-mini (most cost-effective)
-- **Average Cost**: $0.01-0.02 per resume tailoring
-- **Token Efficiency**: Optimized prompts for minimal usage
+### Model Costs (verify current pricing before committing)
+- **Generation**: `claude-sonnet-4-6` with prompt caching — ~$0.033/application
+- **Scoring**: `claude-haiku-4-5-20251001` — ~$0.0002/job scored
+- **At 400 applications**: ~$13-15/month total
+- **OpenRouter alternative for scoring**: `google/gemini-flash-1.5` — often cheaper than Haiku; no caching needed for scoring since prompts are short
 
 ### Supabase Edge Functions
 - **Free Tier**: 500,000 invocations/month
@@ -168,11 +184,15 @@ supabase secrets list
 
 ## Future Enhancements
 
-### Planned Features
-- **Batch Processing**: Multiple resume versions simultaneously
-- **Advanced Analytics**: Detailed AI usage metrics
-- **Model Upgrades**: Easy OpenAI model switching
-- **Custom Prompts**: User-configurable AI behaviors
+### Available Now (Not Future)
+- **Batch Processing**: Anthropic and OpenAI both offer Batch APIs at 50% discount for async workloads. Use for non-urgent generation runs (overnight batch instead of real-time).
+- **Prompt Caching**: Cache the static system prompt + resume template prefix. ~80% cost reduction on cached tokens. Implemented in the Anthropic HTTP call via `cache_control`.
+- **Structured Outputs**: Enforce exact JSON schema on model responses using Anthropic tool use or OpenAI `response_format: json_schema`. Eliminates JSON parse failures.
+
+### Still Planned
+- **Advanced Analytics**: Detailed AI usage metrics per model/task
+- **Model Auto-Routing**: Automatically select cheapest model that meets quality threshold
+- **Custom Prompts**: User-configurable AI behaviors per role type
 
 ### Scalability
 - **Auto-scaling**: Edge Functions scale automatically

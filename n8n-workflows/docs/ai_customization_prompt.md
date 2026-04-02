@@ -14,6 +14,12 @@ Your task is to create customized application materials that maximize the candid
 
 ## OUTPUT FORMAT
 
+**Preferred: Structured Output (schema-enforced)**
+Use Anthropic tool use or OpenAI `response_format: json_schema` to guarantee valid JSON — no parse errors, no retry logic needed. Define the schema below as the tool input schema or JSON schema.
+
+**Fallback: Prompt-only JSON**
+If your n8n node doesn't support structured outputs, instruct the model to return a JSON object as shown below. Add a Code node after to validate with `JSON.parse()` and handle errors.
+
 Return a JSON object with exactly this structure:
 ```json
 {

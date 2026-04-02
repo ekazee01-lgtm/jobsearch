@@ -68,7 +68,7 @@
 │  │  ┌──────────────────────────────────────────────────────────────────┐ │ │
 │  │  │  Request:                                                         │ │ │
 │  │  │  {                                                                │ │ │
-│  │  │    "model": "claude-sonnet-4-20250514",                          │ │ │
+│  │  │    "model": "claude-sonnet-4-6",                                 │ │ │
 │  │  │    "max_tokens": 4000,                                           │ │ │
 │  │  │    "messages": [{                                                │ │ │
 │  │  │      "role": "user",                                             │ │ │
@@ -408,20 +408,48 @@ ORDER BY week DESC;
 
 ---
 
+## 🤖 Model Strategy (Tiered for Cost + Quality)
+
+Different tasks need different models. Don't use Sonnet where Haiku will do.
+
+| Task | Model | Approx Cost/Call |
+|------|-------|-----------------|
+| Resume + cover letter generation | `claude-sonnet-4-6` (Anthropic direct) | ~$0.008–0.032 |
+| Job scoring (1-10) | `claude-haiku-4-5-20251001` | ~$0.0002 |
+| Email classification | `claude-haiku-4-5-20251001` | ~$0.0001 |
+| Follow-up drafts | `claude-haiku-4-5-20251001` | ~$0.0002 |
+
+**OpenRouter alternative**: Route scoring/classification calls to `google/gemini-flash-1.5` or `meta-llama/llama-3.1-8b-instruct` for even lower cost. Use env var `AI_SCORING_MODEL` to switch without code changes. Tradeoff: prompt caching is not available via OpenRouter.
+
+**Check current pricing** before committing to a model — the landscape changes rapidly. Verify at:
+- Anthropic: https://www.anthropic.com/pricing
+- OpenRouter: https://openrouter.ai/models
+
+---
+
 ## 📊 Cost Breakdown (Detailed)
 
-**Per Application:**
-- Input to Claude: ~2,500 tokens (job description + templates)
-  - Cost: 2,500 * $3/1M = $0.0075
-- Output from Claude: ~2,000 tokens (resume + cover letter + JSON)
-  - Cost: 2,000 * $15/1M = $0.03
-- **Total per application: ~$0.0375**
+**Per Application — Generation (Sonnet 4.6, with prompt caching):**
 
-**Monthly at Different Volumes:**
-- 50 applications: $1.88
-- 100 applications: $3.75
-- 200 applications: $7.50
-- 400 applications: $15.00
+Prompt caching caches the static portion of your request (system prompt + master resume template, ~3,500 tokens). On repeat calls only the job description is billed at full rate.
+
+- Cached input (~3,500 tokens): 3,500 * $0.30/1M = $0.00105
+- Uncached input (~500 tokens job description): 500 * $3/1M = $0.0015
+- Output (~2,000 tokens resume + cover letter + JSON): 2,000 * $15/1M = $0.03
+- **Total per application with caching: ~$0.033**
+
+Without caching (e.g., via OpenRouter): ~$0.0435 — roughly 30% more expensive.
+
+**Per Job Scored — Haiku 4.5:**
+- Input (~500 tokens): 500 * $0.25/1M = $0.000125
+- Output (~50 tokens): 50 * $1.25/1M = $0.0000625
+- **Total per scoring call: ~$0.0002** (vs ~$0.005 using Sonnet)
+
+**Monthly at Different Volumes (generation + scoring combined):**
+- 50 applications: ~$1.70
+- 100 applications: ~$3.40
+- 200 applications: ~$6.80
+- 400 applications: ~$13.60
 
 **Free Tier Usage:**
 - n8n: 5,000 executions/month (you'll use ~300-400)
@@ -429,8 +457,46 @@ ORDER BY week DESC;
 - GitHub: Unlimited public/private repos
 - Gmail SMTP: Unlimited (with app password)
 
-**Only Paid Component: Anthropic API**
+**Paid Components: Anthropic API (primary), OpenRouter (optional for scoring)**
 
 ---
 
-This architecture gives you industrial-scale application processing while maintaining quality control and keeping costs under $20/month. 🚀
+## 💡 Prompt Caching Setup (Anthropic Direct)
+
+To enable caching on the static prefix (system prompt + resume template), set `cache_control` on the last static message block before the dynamic job description:
+
+```json
+{
+  "model": "claude-sonnet-4-6",
+  "max_tokens": 4000,
+  "system": [
+    {
+      "type": "text",
+      "text": "<system prompt here>",
+      "cache_control": {"type": "ephemeral"}
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "<master resume template here>",
+          "cache_control": {"type": "ephemeral"}
+        },
+        {
+          "type": "text",
+          "text": "<job description — dynamic, not cached>"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The n8n HTTP node passes this as the request body. Cache hits are confirmed in the response's `usage.cache_read_input_tokens` field.
+
+---
+
+This architecture gives you industrial-scale application processing while maintaining quality control and keeping costs under $15/month at 400 applications.

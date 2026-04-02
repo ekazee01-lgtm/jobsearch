@@ -32,8 +32,9 @@ Create an n8n workflow called "Job Discovery Engine" that:
    - Skip jobs older than 48 hours
    - Skip jobs with salary under $80k (when listed)
 
-4. AI SCORING (Use OpenAI GPT-4):
+4. AI SCORING (Use claude-haiku-4-5-20251001 — or google/gemini-flash-1.5 via OpenRouter):
    System prompt: "Score this job 1-10 for Eric Kazee: AI Adoption Specialist, 12+ years legal tech (iManage, NetDocuments), seeks remote AI+legal roles $100k+. Perfect=10, Poor=1"
+   Note: Use the cheapest capable model here — scoring is a simple task; Haiku costs ~12x less than Sonnet.
 
 5. SUPABASE INTEGRATION:
    - Save ALL jobs to job_raw table (staging)
@@ -64,14 +65,15 @@ Create an n8n workflow called "Smart Application Engine" that:
    - Extract key requirements, skills, company info
    - Research company (LinkedIn, website, recent news)
 
-3. RESUME CUSTOMIZATION (Use Claude 3.5):
+3. RESUME CUSTOMIZATION (Use claude-sonnet-4-6 via Anthropic direct — enables prompt caching):
    - Read my master resume from Supabase resume_versions table
    - Emphasize relevant experience for this specific job
    - Highlight AI + legal technology expertise
    - Keep format professional, ATS-friendly
    - Max 2 pages
+   - Cache the master resume + system prompt as a prefix block to cut token costs ~80%
 
-4. COVER LETTER GENERATION (Use Claude 3.5):
+4. COVER LETTER GENERATION (Use claude-sonnet-4-6):
    - Write personalized 200-250 word cover letter
    - Reference specific job requirements
    - Mention company research insights
@@ -205,6 +207,23 @@ Create an n8n workflow called "Market Intelligence" that:
 
 Build with analytics and visualization components.
 ```
+
+## Quick Start Instructions
+
+## Model Strategy Summary
+
+| Task | Model | Why |
+|------|-------|-----|
+| Job scoring (1-10) | `claude-haiku-4-5-20251001` | Simple task; ~12x cheaper than Sonnet |
+| Resume customization | `claude-sonnet-4-6` (Anthropic direct) | Quality matters; use prompt caching on templates |
+| Cover letter generation | `claude-sonnet-4-6` (Anthropic direct) | Same as above |
+| Email classification | `claude-haiku-4-5-20251001` or OpenRouter cheap model | Simple text classification |
+
+**OpenRouter alternative**: Use `anthropic/claude-sonnet-4-6` and `anthropic/claude-haiku-4-5` via OpenRouter for a single API key and access to Gemini/Llama alternatives for scoring. Tradeoff: prompt caching is not available through OpenRouter, so generation costs will be higher.
+
+**When to go direct Anthropic**: When running high volume (100+ applications). Prompt caching on the ~3,500-token template prefix saves ~$0.028 per call vs. uncached.
+
+---
 
 ## Quick Start Instructions
 

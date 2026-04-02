@@ -13,9 +13,28 @@ USER_ID=542413a9-b564-423c-96c9-99d51cc01107
 
 ### **AI Services**
 ```
-OPENAI_API_KEY=your-openai-api-key
+# Anthropic — used for resume/cover letter generation (supports prompt caching)
 ANTHROPIC_API_KEY=your-anthropic-api-key
+
+# OpenRouter — optional; use for job scoring to access cheaper models (Gemini Flash, Llama, etc.)
+# Base URL: https://openrouter.ai/api/v1  (OpenAI-compatible)
+OPENROUTER_API_KEY=your-openrouter-api-key
+
+# OpenAI — only needed if NOT using OpenRouter for scoring
+OPENAI_API_KEY=your-openai-api-key
+
+# Which model to use for scoring (1-10 job match) — swap freely
+# Direct Anthropic: claude-haiku-4-5-20251001
+# Via OpenRouter:   google/gemini-flash-1.5  |  meta-llama/llama-3.1-8b-instruct
+AI_SCORING_MODEL=claude-haiku-4-5-20251001
+AI_SCORING_BASE_URL=https://api.anthropic.com  # or https://openrouter.ai/api/v1
+
+# Which model to use for generation — use Sonnet direct for prompt caching
+AI_GENERATION_MODEL=claude-sonnet-4-6
+AI_GENERATION_BASE_URL=https://api.anthropic.com
 ```
+
+**Note on prompt caching**: Only available when calling Anthropic directly. If you route generation through OpenRouter, caching is not applied and per-call costs will be ~30% higher. At 100+ applications/month, direct Anthropic is meaningfully cheaper for generation.
 
 ### **Email & Communication**
 ```

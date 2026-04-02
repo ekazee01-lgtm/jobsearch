@@ -17,7 +17,7 @@ AI Adoption Specialist | Legal Technology | Training & Consulting
 - Frontend: HTML5, CSS3, JavaScript
 - Backend: Python 3.x
 - Automation: n8n, Crawl4AI
-- AI: OpenAI API
+- AI: Anthropic Claude (generation), OpenAI / OpenRouter (scoring — swappable)
 
 ## 🕷️ Crawl4AI Setup
 
