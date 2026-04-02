@@ -118,7 +118,7 @@
       },
       "id": "crunchbase",
       "name": "Research Company (Crunchbase)",
-      "type": "n8n-nodes-base.playwright",
+      "type": "n8n-nodes-playwright.playwright",
       "typeVersion": 1,
       "position": [
         1280,
@@ -143,7 +143,7 @@
       },
       "id": "directory",
       "name": "Find Employees (Directory)",
-      "type": "n8n-nodes-base.playwright",
+      "type": "n8n-nodes-playwright.playwright",
       "typeVersion": 1,
       "position": [
         1280,

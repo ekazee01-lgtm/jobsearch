@@ -18,7 +18,8 @@
       "Bash(source:*)",
       "Bash(.venv/bin/crawl4ai-doctor:*)",
       "Bash(python:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(docker exec:*)"
     ],
     "deny": [],
     "ask": []

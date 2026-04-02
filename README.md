@@ -16,8 +16,8 @@ AI Adoption Specialist | Legal Technology | Training & Consulting
 ## Tech Stack
 - Frontend: HTML5, CSS3, JavaScript
 - Backend: Python 3.x
-- Automation: n8n, Make.com, Crawl4AI
-- AI: OpenAI API, Claude API
+- Automation: n8n, Crawl4AI
+- AI: OpenAI API
 
 ## 🕷️ Crawl4AI Setup
 
