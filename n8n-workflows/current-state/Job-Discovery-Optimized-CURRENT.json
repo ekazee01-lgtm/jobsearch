@@ -1,0 +1,754 @@
+{
+  "name": "Job Discovery (Optimized)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hour",
+              "hour": 8
+            },
+            {
+              "field": "minute",
+              "minute": 0
+            }
+          ]
+        },
+        "timezone": "America/Chicago"
+      },
+      "id": "trigger-daily",
+      "name": "Daily Job Discovery (8AM)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://remoteok.com/remote-ai+automation+implementation-jobs.rss",
+        "options": {}
+      },
+      "id": "rss-remoteok-ai",
+      "name": "RemoteOK AI Jobs",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://weworkremotely.com/categories/remote-programming-jobs.rss",
+        "options": {}
+      },
+      "id": "rss-wwr-programming",
+      "name": "WeWork Programming/AI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss",
+        "options": {}
+      },
+      "id": "rss-wwr-management",
+      "name": "WeWork Management",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://remoteok.com/remote-consulting+enablement-jobs.rss",
+        "options": {}
+      },
+      "id": "rss-remoteok-consulting",
+      "name": "RemoteOK Consulting",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/alerts/feeds/14300375354423668492/10755734950416799199",
+        "options": {}
+      },
+      "id": "rss-google-alerts-1",
+      "name": "Google: AI Implementation",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/alerts/feeds/14300375354423668492/9346164383827631766",
+        "options": {}
+      },
+      "id": "rss-google-alerts-2",
+      "name": "Google: AI Consulting",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/alerts/feeds/14300375354423668492/16331894078291876616",
+        "options": {}
+      },
+      "id": "rss-google-alerts-3",
+      "name": "Google: AWS AI/ML",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/alerts/feeds/14300375354423668492/16143147402762450619",
+        "options": {}
+      },
+      "id": "rss-google-alerts-4",
+      "name": "Google: AI Product/PM",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        820
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.google.com/alerts/feeds/14300375354423668492/14045647346583799887",
+        "options": {}
+      },
+      "id": "rss-google-alerts-5",
+      "name": "Google: Web3 AI",
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1,
+      "position": [
+        400,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine"
+      },
+      "id": "merge-feeds",
+      "name": "Merge All Job Feeds",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Optimized job data standardization with robust regex\nconst standardizedJobs = [];\nconst userId = '542413a9-b564-423c-96c9-99d51cc01107';\n\nfor (const item of $input.all()) {\n  try {\n    let cleanTitle = item.json.title || 'Unknown Role';\n    let company = 'Unknown';\n    let location = 'Remote';\n\n    // Strategy 1: Indeed \\\"Title at Company in Location\\\"\n    const indeedMatch = cleanTitle.match(/(.+?)\\\\s+at\\\\s+(.+?)\\\\s+in\\\\s+(.+)$/i);\n    \n    // Strategy 2: Common \\\"Title - Company\\\" format\n    const dashMatch = cleanTitle.match(/(.+?)\\\\s+-\\\\s+(.+)$/);\n    \n    // Strategy 3: Company: Title format\n    const colonMatch = cleanTitle.match(/(.+?):\\\\s*(.+)$/);\n\n    if (indeedMatch) {\n      cleanTitle = indeedMatch[1].trim();\n      company = indeedMatch[2].trim();\n      location = indeedMatch[3].trim();\n    } else if (dashMatch) {\n      cleanTitle = dashMatch[1].trim();\n      company = dashMatch[2].trim();\n    } else if (colonMatch) {\n      company = colonMatch[1].trim();\n      cleanTitle = colonMatch[2].trim();\n    }\n\n    const standardJob = {\n      user_id: userId,\n      title: cleanTitle,\n      company: company,\n      location: location,\n      url: item.json.link || item.json.guid || '',\n      description: item.json.contentSnippet || item.json.description || '',\n      // Identify source from link contents\n      source: item.json.link && item.json.link.includes('google.com/alerts') ? 'Google Alerts' :\n              item.json.link && item.json.link.includes('remoteok.com') ? 'RemoteOK' :\n              item.json.link && item.json.link.includes('weworkremotely.com') ? 'WeWorkRemotely' :\n              item.json.link && item.json.link.includes('indeed') ? 'Indeed' : 'RSS',\n      published: item.json.pubDate || new Date().toISOString(),\n      raw_title: item.json.title\n    };\n\n    // Basic validity check\n    if (standardJob.url && standardJob.title !== 'Unknown Role') {\n      standardizedJobs.push({ json: standardJob });\n    }\n    \n  } catch (error) {\n    console.error('Error parsing job:', error);\n  }\n}\n\nreturn standardizedJobs;"
+      },
+      "id": "standardize-jobs",
+      "name": "Standardize Job Data",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        840,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "ai-filter",
+              "leftValue": "={{ $json.title.toLowerCase() + ' ' + $json.description.toLowerCase() }}",
+              "rightValue": "ai",
+              "operator": {
+                "type": "string",
+                "operation": "contains",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "pre-ai-filter",
+      "name": "Pre-AI Relevance Filter",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1060,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Enhanced relevance filtering to save AI costs\nconst relevantJobs = [];\nconst relevantKeywords = [\n  'ai', 'artificial intelligence', 'machine learning', 'ml',\n  'python', 'aws', 'cloud', 'implementation', 'consulting',\n  'data science', 'automation', 'genai', 'llm', 'nlp',\n  'delivery consultant', 'solution architect', 'enablement'\n];\n\nconst excludeKeywords = [\n  'sales', 'marketing', 'recruiter', 'hr', 'accounting',\n  'finance', 'legal', 'paralegal', 'nurse', 'doctor'\n];\n\nfor (const item of $input.all()) {\n  const text = (item.json.title + ' ' + item.json.description).toLowerCase();\n  \n  // Check for relevant keywords\n  const hasRelevantKeyword = relevantKeywords.some(keyword => text.includes(keyword));\n  \n  // Check for exclusion keywords\n  const hasExcludeKeyword = excludeKeywords.some(keyword => text.includes(keyword));\n  \n  // Only pass jobs that are relevant and not excluded\n  if (hasRelevantKeyword && !hasExcludeKeyword) {\n    relevantJobs.push(item);\n  }\n}\n\nreturn relevantJobs;"
+      },
+      "id": "relevance-filter",
+      "name": "Smart Relevance Filter",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1280,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "rows",
+        "operation": "create",
+        "tableId": "job_raw",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "user_id",
+              "fieldValue": "={{ $json.user_id }}"
+            },
+            {
+              "fieldName": "title",
+              "fieldValue": "={{ $json.title }}"
+            },
+            {
+              "fieldName": "company",
+              "fieldValue": "={{ $json.company }}"
+            },
+            {
+              "fieldName": "location",
+              "fieldValue": "={{ $json.location }}"
+            },
+            {
+              "fieldName": "url",
+              "fieldValue": "={{ $json.url }}"
+            },
+            {
+              "fieldName": "description",
+              "fieldValue": "={{ $json.description }}"
+            },
+            {
+              "fieldName": "source",
+              "fieldValue": "={{ $json.source }}"
+            },
+            {
+              "fieldName": "published_date",
+              "fieldValue": "={{ $json.published }}"
+            },
+            {
+              "fieldName": "discovery_status",
+              "fieldValue": "New"
+            }
+          ]
+        },
+        "options": {
+          "upsert": true
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "save-to-staging",
+      "name": "Save to Staging (Auto-Dedupe)",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1500,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "model": "gpt-3.5-turbo",
+        "messages": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are an AI job relevance scorer. Score jobs 1-10 based on fit for Eric Kazee's background: AI implementation, consulting, enablement, AWS/cloud, enterprise transformation. Return ONLY the numeric score."
+            },
+            {
+              "role": "user",
+              "content": "Job Title: {{ $json.title }}\\nCompany: {{ $json.company }}\\nDescription: {{ $json.description }}\\n\\nScore this job's relevance (1-10):"
+            }
+          ]
+        },
+        "options": {
+          "maxTokens": 10
+        }
+      },
+      "credentials": {
+        "openAiApi": {
+          "id": "7Hq7BsfIvdKKMRnF",
+          "name": "OpenAI account"
+        }
+      },
+      "id": "ai-score-job",
+      "name": "AI Score Job Relevance",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        1720,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse AI score and update job record\nconst scoreText = $json.content || '0';\nconst score = parseInt(scoreText.match(/\\d+/)?.[0] || '0');\n\nreturn [{\n  json: {\n    job_id: $('Save to Staging (Auto-Dedupe)').item.json.id,\n    ai_score: Math.min(Math.max(score, 1), 10), // Ensure score is 1-10\n    scored_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "parse-score",
+      "name": "Parse AI Score",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [
+        1940,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "rows",
+        "operation": "update",
+        "tableId": "job_raw",
+        "filterType": "manual",
+        "filtersUi": {
+          "filterValues": [
+            {
+              "key": "id",
+              "condition": "equals",
+              "value": "={{ $json.job_id }}"
+            }
+          ]
+        },
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "ai_score",
+              "fieldValue": "={{ $json.ai_score }}"
+            },
+            {
+              "fieldName": "discovery_status",
+              "fieldValue": "Scored"
+            },
+            {
+              "fieldName": "updated_at",
+              "fieldValue": "={{ $json.scored_at }}"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "update-score",
+      "name": "Update Job Score",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2160,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.ai_score }}",
+              "operation": "largerEqual",
+              "value2": 8
+            }
+          ]
+        }
+      },
+      "id": "high-score-filter",
+      "name": "High Score Filter (8+)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "rows",
+        "operation": "create",
+        "tableId": "job_applications",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldName": "user_id",
+              "fieldValue": "542413a9-b564-423c-96c9-99d51cc01107"
+            },
+            {
+              "fieldName": "title",
+              "fieldValue": "={{ $('Save to Staging (Auto-Dedupe)').item.json.title }}"
+            },
+            {
+              "fieldName": "company",
+              "fieldValue": "={{ $('Save to Staging (Auto-Dedupe)').item.json.company }}"
+            },
+            {
+              "fieldName": "location",
+              "fieldValue": "={{ $('Save to Staging (Auto-Dedupe)').item.json.location }}"
+            },
+            {
+              "fieldName": "url",
+              "fieldValue": "={{ $('Save to Staging (Auto-Dedupe)').item.json.url }}"
+            },
+            {
+              "fieldName": "description",
+              "fieldValue": "={{ $('Save to Staging (Auto-Dedupe)').item.json.description }}"
+            },
+            {
+              "fieldName": "source",
+              "fieldValue": "={{ $('Save to Staging (Auto-Dedupe)').item.json.source }}"
+            },
+            {
+              "fieldName": "ai_score",
+              "fieldValue": "={{ $json.ai_score }}"
+            },
+            {
+              "fieldName": "application_status",
+              "fieldValue": "Ready to Apply"
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "C8yUrpS7o6eVoW2L",
+          "name": "Supabase account"
+        }
+      },
+      "id": "promote-to-applications",
+      "name": "Promote to Applications",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "keepOnlySet": false,
+        "values": {
+          "string": []
+        }
+      },
+      "id": "low-score-archive",
+      "name": "Archive Low Score",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2600,
+        320
+      ]
+    }
+  ],
+  "connections": {
+    "Daily Job Discovery (8AM)": {
+      "main": [
+        [
+          {
+            "node": "RemoteOK AI Jobs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "WeWork Programming/AI",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "WeWork Management",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RemoteOK Consulting",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google: AI Implementation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google: AI Consulting",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google: AWS AI/ML",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google: AI Product/PM",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Google: Web3 AI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RemoteOK AI Jobs": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "WeWork Programming/AI": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "WeWork Management": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "RemoteOK Consulting": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Google: AI Implementation": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Google: AI Consulting": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Google: AWS AI/ML": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Google: AI Product/PM": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 7
+          }
+        ]
+      ]
+    },
+    "Google: Web3 AI": {
+      "main": [
+        [
+          {
+            "node": "Merge All Job Feeds",
+            "type": "main",
+            "index": 8
+          }
+        ]
+      ]
+    },
+    "Merge All Job Feeds": {
+      "main": [
+        [
+          {
+            "node": "Standardize Job Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standardize Job Data": {
+      "main": [
+        [
+          {
+            "node": "Pre-AI Relevance Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-AI Relevance Filter": {
+      "main": [
+        [
+          {
+            "node": "Smart Relevance Filter",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Archive Low Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Smart Relevance Filter": {
+      "main": [
+        [
+          {
+            "node": "Save to Staging (Auto-Dedupe)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Staging (Auto-Dedupe)": {
+      "main": [
+        [
+          {
+            "node": "AI Score Job Relevance",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Score Job Relevance": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Score": {
+      "main": [
+        [
+          {
+            "node": "Update Job Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Job Score": {
+      "main": [
+        [
+          {
+            "node": "High Score Filter (8+)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Score Filter (8+)": {
+      "main": [
+        [
+          {
+            "node": "Promote to Applications",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Archive Low Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "staticData": {},
+  "meta": {
+    "instanceId": "n8n-local"
+  },
+  "id": "job-discovery-optimized",
+  "tags": []
+}
