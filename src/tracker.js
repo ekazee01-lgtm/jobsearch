@@ -2,7 +2,11 @@
 const SUPABASE_URL = 'https://hndkhpwzvybbiagnjkdr.supabase.co'
 const SUPABASE_ANON_KEY = 'sb_publishable_gGSkycyet1bMedqzYPwoug_pFm_Z8j-'
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Must be `var`, not `const`: the supabase-js UMD bundle declares a global
+// `var supabase` for its namespace, and a `const` redeclaration is a
+// page-killing SyntaxError. `var` legally redeclares and replaces the
+// namespace with the client instance.
+var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 let currentUser = null;
 let jobs = [];

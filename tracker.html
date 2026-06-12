@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -6,7 +6,7 @@
     <title>Job Tracker | Eric Kazee</title>
     <link rel="stylesheet" href="src/styles.css">
     <link rel="stylesheet" href="src/tracker.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.1"></script>
     <script src="js/config.js"></script>
     <script src="js/ai-features-secure.js"></script>
 </head>
@@ -59,11 +59,11 @@
             <!-- Alerts and Notifications -->
             <div id="alerts-section" class="alerts-section" style="display: none;">
                 <div class="alert-group">
-                    <h3>🔔 Follow-up Reminders</h3>
+                    <h3>ðŸ”” Follow-up Reminders</h3>
                     <div id="follow-up-alerts"></div>
                 </div>
                 <div class="alert-group">
-                    <h3>⚠️ Deadline Alerts</h3>
+                    <h3>âš ï¸ Deadline Alerts</h3>
                     <div id="deadline-alerts"></div>
                 </div>
             </div>
@@ -71,10 +71,10 @@
             <!-- Action Buttons -->
             <div class="action-buttons">
                 <button id="add-job-btn" class="btn-primary">+ Add New Job</button>
-                <button id="setup-ai-btn" class="btn-secondary">🤖 Setup AI Features</button>
-                <button id="manage-resume-btn" class="btn-secondary">📄 Manage Resume</button>
-                <button id="toggle-filters-btn" class="btn-secondary">🔍 Filters</button>
-                <button id="columns-btn" class="btn-secondary">📊 Columns</button>
+                <button id="setup-ai-btn" class="btn-secondary">ðŸ¤– Setup AI Features</button>
+                <button id="manage-resume-btn" class="btn-secondary">ðŸ“„ Manage Resume</button>
+                <button id="toggle-filters-btn" class="btn-secondary">ðŸ” Filters</button>
+                <button id="columns-btn" class="btn-secondary">ðŸ“Š Columns</button>
                 <button id="bulk-actions-btn" class="btn-secondary" disabled>Bulk Actions</button>
             </div>
 
@@ -85,11 +85,11 @@
                         <label for="filter-excitement">Excitement Level</label>
                         <select id="filter-excitement">
                             <option value="">All levels</option>
-                            <option value="5">⭐⭐⭐⭐⭐ Dream Job</option>
-                            <option value="4">⭐⭐⭐⭐ Very Interested</option>
-                            <option value="3">⭐⭐⭐ Interested</option>
-                            <option value="2">⭐⭐ Some Interest</option>
-                            <option value="1">⭐ Low Interest</option>
+                            <option value="5">â­â­â­â­â­ Dream Job</option>
+                            <option value="4">â­â­â­â­ Very Interested</option>
+                            <option value="3">â­â­â­ Interested</option>
+                            <option value="2">â­â­ Some Interest</option>
+                            <option value="1">â­ Low Interest</option>
                         </select>
                     </div>
                     <div class="filter-group">
@@ -157,47 +157,47 @@
             <!-- Job Pipeline (Kanban) -->
             <section class="pipeline">
                 <div class="pipeline-column" data-status="to-review">
-                    <h3>📋 To Review <span class="count">0</span></h3>
+                    <h3>ðŸ“‹ To Review <span class="count">0</span></h3>
                     <div class="job-cards" id="to-review-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="bookmarked">
-                    <h3>📌 Bookmarked <span class="count">0</span></h3>
+                    <h3>ðŸ“Œ Bookmarked <span class="count">0</span></h3>
                     <div class="job-cards" id="bookmarked-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="applying">
-                    <h3>✍️ Applying <span class="count">0</span></h3>
+                    <h3>âœï¸ Applying <span class="count">0</span></h3>
                     <div class="job-cards" id="applying-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="applied">
-                    <h3>📤 Applied <span class="count">0</span></h3>
+                    <h3>ðŸ“¤ Applied <span class="count">0</span></h3>
                     <div class="job-cards" id="applied-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="interview">
-                    <h3>💼 Interview <span class="count">0</span></h3>
+                    <h3>ðŸ’¼ Interview <span class="count">0</span></h3>
                     <div class="job-cards" id="interview-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="offer">
-                    <h3>🎉 Offer <span class="count">0</span></h3>
+                    <h3>ðŸŽ‰ Offer <span class="count">0</span></h3>
                     <div class="job-cards" id="offer-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="negotiating">
-                    <h3>💰 Negotiating <span class="count">0</span></h3>
+                    <h3>ðŸ’° Negotiating <span class="count">0</span></h3>
                     <div class="job-cards" id="negotiating-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="accepted">
-                    <h3>✅ Accepted <span class="count">0</span></h3>
+                    <h3>âœ… Accepted <span class="count">0</span></h3>
                     <div class="job-cards" id="accepted-cards"></div>
                 </div>
 
                 <div class="pipeline-column" data-status="rejected">
-                    <h3>❌ Rejected <span class="count">0</span></h3>
+                    <h3>âŒ Rejected <span class="count">0</span></h3>
                     <div class="job-cards" id="rejected-cards"></div>
                 </div>
             </section>
@@ -254,11 +254,11 @@
                         <label for="excitement">Excitement Level</label>
                         <select id="excitement">
                             <option value="">Select level...</option>
-                            <option value="1">⭐ Low Interest</option>
-                            <option value="2">⭐⭐ Some Interest</option>
-                            <option value="3">⭐⭐⭐ Interested</option>
-                            <option value="4">⭐⭐⭐⭐ Very Interested</option>
-                            <option value="5">⭐⭐⭐⭐⭐ Dream Job</option>
+                            <option value="1">â­ Low Interest</option>
+                            <option value="2">â­â­ Some Interest</option>
+                            <option value="3">â­â­â­ Interested</option>
+                            <option value="4">â­â­â­â­ Very Interested</option>
+                            <option value="5">â­â­â­â­â­ Dream Job</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -303,7 +303,7 @@
     <div id="resume-modal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeResumeModal()">&times;</span>
-            <h2>📄 Master Resume Management</h2>
+            <h2>ðŸ“„ Master Resume Management</h2>
 
             <div id="resume-content">
                 <div class="resume-section">
@@ -333,32 +333,32 @@ I am writing to express my interest in..."></textarea>
     <div id="ai-actions-modal" class="modal">
         <div class="modal-content">
             <span class="close" onclick="closeAIActionsModal()">&times;</span>
-            <h2 id="ai-modal-title">🤖 AI Actions</h2>
+            <h2 id="ai-modal-title">ðŸ¤– AI Actions</h2>
 
             <div id="ai-content">
                 <div class="ai-action-section">
-                    <h3>📝 Resume Tailoring</h3>
+                    <h3>ðŸ“ Resume Tailoring</h3>
                     <p>Use AI to customize your resume for this specific job posting.</p>
                     <button id="tailor-resume-btn" class="btn-primary" onclick="tailorResumeForJob()">
-                        ✨ Tailor Resume with AI
+                        âœ¨ Tailor Resume with AI
                     </button>
                     <div id="tailoring-status" class="status-message"></div>
                 </div>
 
                 <div class="ai-action-section" id="application-section" style="display: none;">
-                    <h3>📧 Application Preparation</h3>
+                    <h3>ðŸ“§ Application Preparation</h3>
                     <p>Prepare your tailored application for submission.</p>
                     <select id="resume-version-select">
                         <option value="">Select a resume version...</option>
                     </select>
                     <button id="prepare-application-btn" class="btn-secondary" onclick="prepareApplication()" disabled>
-                        📤 Prepare Application
+                        ðŸ“¤ Prepare Application
                     </button>
                     <div id="application-status" class="status-message"></div>
                 </div>
 
                 <div class="ai-action-section">
-                    <h3>📊 Application History</h3>
+                    <h3>ðŸ“Š Application History</h3>
                     <div id="job-events" class="events-list">
                         <p>Loading events...</p>
                     </div>
@@ -371,7 +371,7 @@ I am writing to express my interest in..."></textarea>
     <div id="application-preview-modal" class="modal">
         <div class="modal-content large">
             <span class="close" onclick="closeApplicationPreview()">&times;</span>
-            <h2>📧 Application Preview</h2>
+            <h2>ðŸ“§ Application Preview</h2>
 
             <div class="application-preview">
                 <div class="email-details">
@@ -392,7 +392,7 @@ I am writing to express my interest in..."></textarea>
 
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary" onclick="closeApplicationPreview()">Close</button>
-                    <button type="button" class="btn-primary" onclick="copyToClipboard()">📋 Copy All to Clipboard</button>
+                    <button type="button" class="btn-primary" onclick="copyToClipboard()">ðŸ“‹ Copy All to Clipboard</button>
                 </div>
             </div>
         </div>

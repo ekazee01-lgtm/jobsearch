@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eric Kazee | AI Adoption & Legal Technology Specialist</title>
     <link rel="stylesheet" href="src/styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.108.1"></script>
 </head>
 <body>
     <header>
@@ -90,7 +90,9 @@
         const EMAIL_REDIRECT_URL = `${window.location.origin}${baseRedirectPath}`
 
         // Initialize Supabase client
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        // `var` is required: the supabase-js UMD bundle declares a global
+        // `var supabase`, and a `const` redeclaration is a SyntaxError.
+        var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
         // Auth state management
         let isLogin = true
