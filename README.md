@@ -14,58 +14,25 @@ AI Adoption Specialist | Legal Technology | Training & Consulting
 - 🐦 [Twitter/X](https://x.com/ekazee)
 
 ## Tech Stack
-- Frontend: HTML5, CSS3, JavaScript
-- Backend: Python 3.x
-- Automation: n8n, Crawl4AI
-- AI: Anthropic Claude (generation), OpenAI / OpenRouter (scoring — swappable)
+- Frontend: HTML5, CSS3, JavaScript (static, GitHub Pages)
+- Backend: Supabase (Postgres + Auth + RLS + Edge Functions)
+- Automation: Supabase Cron (pg_cron) + Edge Functions — serverless, no VPS
+- AI: OpenAI via the `tailor-resume` Edge Function
 
-## 🕷️ Crawl4AI Setup
+## 🤖 Job Search Automation
 
-This project includes Crawl4AI for advanced web scraping and data extraction. Follow these steps for setup:
+Daily automation runs entirely inside Supabase — no servers to maintain. See
+[AUTOMATION.md](AUTOMATION.md) for architecture, deployment, and verification.
 
-### Prerequisites
-- Ubuntu/WSL2 environment
-- Python 3.8+
-- Virtual environment activated
+- `discover-jobs` Edge Function (daily, pg_cron): fetches 9 RSS/Atom job feeds,
+  dedupes, inserts into `job_raw`
+- `daily-digest` Edge Function (daily, pg_cron): emails a morning summary of
+  new jobs, pipeline status, and upcoming interviews via Resend
+- Human-in-the-loop: drag a card to **Ready to Apply** in the tracker and click
+  Tailor — the existing `tailor-resume` function generates materials
 
-### Installation & Setup
-```bash
-# 1. Navigate to project directory
-cd /mnt/c/Users/ekaze/Github_Job_Search/jobsearch
-
-# 2. Activate virtual environment
-source .venv/bin/activate
-
-# 3. Set required environment variables
-export CRAWL4AI_BASE_DIRECTORY="$PWD/.crawl4ai-data"
-export CRAWL4AI_MODE="api"
-
-# 4. Create data directory
-mkdir -p "$CRAWL4AI_BASE_DIRECTORY"
-
-# 5. Install Playwright browsers and dependencies
-python -m playwright install chromium
-sudo python -m playwright install-deps chromium
-
-# 6. Run Crawl4AI setup
-crawl4ai-setup --verbose
-```
-
-### Usage
-The Crawl4AI installation provides:
-- CLI tool: `.venv/bin/crawl4ai`
-- Python API: `from crawl4ai import AsyncWebCrawler`
-- Database storage in `.crawl4ai-data/`
-- Browser automation with Chromium
-
-### Testing Installation
-```bash
-# Verify end-to-end functionality
-crawl4ai-doctor
-
-# Test basic crawling
-python scripts/test-crawler.py
-```
+The earlier n8n + VPS design was retired before deployment (over-engineered for
+this workload); its workflows are preserved in [archive/n8n/](archive/n8n/).
 
 ---
 

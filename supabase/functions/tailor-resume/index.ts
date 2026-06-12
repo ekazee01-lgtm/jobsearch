@@ -18,11 +18,11 @@ serve(async (req) => {
   try {
     // Get environment variables
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
-    const SUPABASE_URL = Deno.env.get('SUPABASE_URL') || 'https://snmdcbrvvzasubdnnsbd.supabase.co'
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')
     const SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
 
-    if (!OPENAI_API_KEY || !SERVICE_ROLE_KEY) {
-      throw new Error('Missing required environment variables: OPENAI_API_KEY or SUPABASE_SERVICE_ROLE_KEY')
+    if (!OPENAI_API_KEY || !SUPABASE_URL || !SERVICE_ROLE_KEY) {
+      throw new Error('Missing required environment variables: OPENAI_API_KEY, SUPABASE_URL, or SUPABASE_SERVICE_ROLE_KEY')
     }
 
     // Parse request

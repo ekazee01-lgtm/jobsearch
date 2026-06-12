@@ -162,7 +162,7 @@ GRANT SELECT ON job_raw TO authenticated;
 GRANT ALL ON job_applications TO authenticated;
 GRANT ALL ON application_materials TO authenticated;
 
--- Grant service role full access for n8n automation
+-- Grant service role full access for serverless automation
 GRANT ALL ON job_raw TO service_role;
 GRANT ALL ON job_applications TO service_role;
 GRANT ALL ON application_materials TO service_role;

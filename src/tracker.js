@@ -1,6 +1,6 @@
 // Your Supabase credentials
-const SUPABASE_URL = 'https://snmdcbrvvzasubdnnsbd.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNubWRjYnJ2dnphc3ViZG5uc2JkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIxOTIwNTQsImV4cCI6MjA3Nzc2ODA1NH0.4-9MrZgla1YDzCR3hrRMygYxphDGNOmEmgDmnH6e6L0'
+const SUPABASE_URL = 'https://hndkhpwzvybbiagnjkdr.supabase.co'
+const SUPABASE_ANON_KEY = 'sb_publishable_gGSkycyet1bMedqzYPwoug_pFm_Z8j-'
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -20,6 +20,18 @@ let columnSettings = {
     showSource: true,
     showLocation: true
 };
+
+function formatAiMatchPercent(score) {
+    if (score === null || score === undefined || score === '') {
+        return '';
+    }
+    const numericScore = Number(score);
+    if (!Number.isFinite(numericScore)) {
+        return '';
+    }
+    const percent = numericScore <= 1 ? numericScore * 100 : numericScore * 10;
+    return `${Math.round(percent)}%`;
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -136,7 +148,7 @@ function createJobCard(job) {
 
     // Show AI match score if available
     const matchScore = job.ai_match_score
-        ? `<span>🎯 ${Math.round(job.ai_match_score * 100)}% match</span>`
+        ? `<span>🎯 ${formatAiMatchPercent(job.ai_match_score)} match</span>`
         : '';
 
     // Show excitement level
@@ -634,7 +646,7 @@ window.bulkExport = function() {
             job.excitement || '',
             job.follow_up_date ? formatDate(job.follow_up_date) : '',
             job.follow_up_notes || '',
-            job.ai_match_score ? Math.round(job.ai_match_score * 100) + '%' : '',
+            job.ai_match_score ? formatAiMatchPercent(job.ai_match_score) : '',
             job.description || '',
             formatDate(job.created_at),
             job.updated_at ? formatDate(job.updated_at) : ''
@@ -822,11 +834,11 @@ function renderAlerts(containerId, alerts) {
 }
 
 // ============================================================================
-// N8N WEBHOOK INTEGRATION
+// LEGACY AUTOMATION WEBHOOKS
 // ============================================================================
 
-// Handle n8n webhook notifications
-window.handleN8nWebhook = function(payload) {
+// Handle legacy automation webhook notifications
+window.handleAutomationWebhook = function(payload) {
     switch (payload.type) {
         case 'new_jobs':
             handleNewJobsFound(payload);
