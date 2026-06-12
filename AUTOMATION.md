@@ -12,8 +12,14 @@ pg_cron (inside Supabase Postgres)
   -> 13:00 UTC daily -> Edge Function: discover-jobs
      1. fetch RSS/Atom feeds
      2. normalize + dedupe into public.job_raw
-     3. keyword-filter relevant jobs
-     4. promote relevant jobs into public.job_applications as "To Review"
+     3. keyword pre-filter (include/exclude lists)
+     4. noise heuristics (drop non-English titles; Google Alert items
+        with company "Unknown" need 2+ keyword hits)
+     5. LLM scoring: one batched OpenAI call scores survivors 1-10
+        against the candidate profile (model: AI_SCORING_MODEL secret,
+        default gpt-5.4-nano; threshold: AI_SCORE_THRESHOLD, default 6;
+        falls back to keyword-count scoring if the call fails)
+     6. promote passing jobs into public.job_applications as "To Review"
 
   -> 13:15 UTC daily -> Edge Function: daily-digest
      1. summarize new jobs from the last 24 hours
@@ -59,6 +65,8 @@ supabase secrets set CRON_SECRET=<random-string>
 supabase secrets set USER_ID=<auth-user-uuid>
 supabase secrets set NOTIFICATION_EMAIL=ekazee.careers@gmail.com
 supabase secrets set RESEND_API_KEY=<key>   # optional; daily-digest skips email if absent
+supabase secrets set AI_SCORING_MODEL=gpt-5.4-nano   # optional; discover-jobs scoring model
+supabase secrets set AI_SCORE_THRESHOLD=6            # optional; min 1-10 score to promote
 
 # 3. Store the same cron secret in Vault from the SQL editor
 #    select vault.create_secret('<same-random-string>', 'cron_secret');

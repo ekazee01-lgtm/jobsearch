@@ -7,6 +7,9 @@
 // Invoked by pg_cron (see supabase/migrations/*_cron_schedules.sql) with an
 // x-cron-secret header; deploy with --no-verify-jwt.
 // Required secrets: CRON_SECRET, USER_ID (tracker owner's auth.users id).
+// Optional secrets: OPENAI_API_KEY (enables LLM scoring; keyword fallback
+// otherwise), AI_SCORING_MODEL (default gpt-5.4-nano), AI_SCORE_THRESHOLD
+// (default 6 — minimum 1-10 score to reach the tracker).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { parseFeed } from 'https://deno.land/x/rss@1.1.2/mod.ts'
@@ -80,6 +83,100 @@ function splitTitle(rawTitle: string, format: FeedSource['titleFormat']): { titl
 // Word-boundary matching so 'ml' doesn't fire on 'html' or 'hr' on 'three'.
 function matchKeywords(text: string, keywords: string[]): string[] {
   return keywords.filter((kw) => new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text))
+}
+
+// Cheap noise heuristics observed in real digests: non-English postings
+// (Portuguese/Spanish accents, German "(m/w/d)" notation) aren't reviewable.
+function looksNonEnglish(title: string): boolean {
+  return /[ãõçáàâéêíóôúüñöäß]/i.test(title) || /\(m\/[wfx]\/[dx]\)/i.test(title)
+}
+
+const PROFILE = `Candidate profile: AI adoption & implementation specialist with 12+ years in
+legal technology. Target roles: AI implementation/enablement, solutions consulting,
+AI product/program management, AI governance & risk, delivery consulting, customer
+enablement. Strong fit: roles bridging AI capability with user adoption, training,
+process change. Weak fit: pure software-engineering stack roles (e.g. Rails, Angular,
+PHP, .NET development), roles requiring deep ML research, non-English-language roles.
+Not jobs at all (score 1): news articles, blog posts, market commentary.`
+
+interface LlmVerdict {
+  score: number
+  reason: string
+}
+
+// One batched call scoring every candidate 1-10 against the profile.
+// Returns null on any failure so the caller can fall back to keyword scoring —
+// discovery must never break because the scoring model misbehaved.
+async function scoreWithLlm(
+  candidates: Array<{ title: string; company: string; description: string | null }>,
+  apiKey: string,
+  model: string,
+): Promise<Map<number, LlmVerdict> | null> {
+  const items = candidates.map((c, i) => ({
+    i,
+    title: c.title,
+    company: c.company,
+    description: (c.description ?? '').slice(0, 600),
+  }))
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      {
+        role: 'user',
+        content: `${PROFILE}
+
+Score each job posting below 1-10 for how well it matches the candidate profile
+(10 = ideal target role, 1 = irrelevant or not a job posting). Judge from the
+title, company, and description excerpt. Return ONLY a JSON object:
+{"scores": [{"i": <item index>, "score": <1-10 integer>, "reason": "<one short sentence>"}, ...]}
+Include every item exactly once.
+
+Job postings:
+${JSON.stringify(items)}`,
+      },
+    ],
+    response_format: { type: 'json_object' },
+    max_completion_tokens: 8000,
+  }
+  // gpt-5.x are reasoning models: keep effort minimal for cost/latency and
+  // leave temperature at its only supported value. Older models get 0.
+  if (model.startsWith('gpt-5')) {
+    body.reasoning_effort = 'minimal'
+  } else {
+    body.temperature = 0
+  }
+
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!res.ok) {
+      console.error(`LLM scoring failed: HTTP ${res.status}: ${await res.text()}`)
+      return null
+    }
+    const result = await res.json()
+    const content = result.choices?.[0]?.message?.content ?? ''
+    const parsed = JSON.parse(content) as { scores?: Array<{ i: number; score: number; reason: string }> }
+    if (!Array.isArray(parsed.scores)) {
+      console.error('LLM scoring returned unexpected shape:', content.slice(0, 300))
+      return null
+    }
+    const verdicts = new Map<number, LlmVerdict>()
+    for (const s of parsed.scores) {
+      if (typeof s.i === 'number' && typeof s.score === 'number') {
+        verdicts.set(s.i, {
+          score: Math.max(1, Math.min(10, Math.round(s.score))),
+          reason: String(s.reason ?? '').slice(0, 500),
+        })
+      }
+    }
+    return verdicts.size > 0 ? verdicts : null
+  } catch (err) {
+    console.error('LLM scoring error:', err)
+    return null
+  }
 }
 
 interface RawJobRow {
@@ -186,9 +283,9 @@ serve(async (req) => {
       insertedRaw = data ?? []
     }
 
-    // Stage 2: relevance filter — only jobs
-    // matching relevant keywords and no exclusion keywords reach the tracker.
-    const promotable = insertedRaw
+    // Stage 2: keyword pre-filter — cheap first pass so the LLM never sees
+    // obviously irrelevant items.
+    const keywordPassed = insertedRaw
       .map((row) => {
         const text = `${row.title} ${row.description ?? ''}`
         const matched = matchKeywords(text, RELEVANT_KEYWORDS)
@@ -197,12 +294,45 @@ serve(async (req) => {
       })
       .filter(({ matched, excluded }) => matched.length > 0 && excluded.length === 0)
 
+    // Stage 2b: noise heuristics. Google Alerts surface news articles with
+    // company 'Unknown' — require a second keyword hit for those. Drop
+    // non-English titles outright.
+    const candidates = keywordPassed.filter(({ row, matched }) => {
+      if (looksNonEnglish(row.title)) return false
+      if (row.company === 'Unknown' && matched.length < 2) return false
+      return true
+    })
+
+    // Stage 2c: LLM scoring (model configurable via AI_SCORING_MODEL,
+    // threshold via AI_SCORE_THRESHOLD). Falls back to keyword-count scoring
+    // if the API key is absent or the call fails.
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
+    const scoringModel = Deno.env.get('AI_SCORING_MODEL') || 'gpt-5.4-nano'
+    const scoreThreshold = Number(Deno.env.get('AI_SCORE_THRESHOLD') || '6')
+    let verdicts: Map<number, LlmVerdict> | null = null
+    if (OPENAI_API_KEY && candidates.length > 0) {
+      verdicts = await scoreWithLlm(candidates.map(({ row }) => row), OPENAI_API_KEY, scoringModel)
+    }
+
+    const promotable = candidates
+      .map(({ row, matched }, i) => {
+        const verdict = verdicts?.get(i) ?? null
+        const score = verdict ? verdict.score : Math.min(10, matched.length + 2)
+        const reason = verdict
+          ? `${scoringModel}: ${verdict.reason}`
+          : `Keyword match (${(row.raw_data as { feed?: string }).feed ?? 'rss'}): ${matched.join(', ')}`
+        return { row, matched, score, reason }
+      })
+      // Without verdicts (fallback mode) promote everything that survived the
+      // heuristics, as before; with verdicts enforce the threshold.
+      .filter(({ score }) => verdicts === null || score >= scoreThreshold)
+
     // Stage 3: promote into job_applications as 'To Review' so the cards show
     // up in the tracker's first column. Score remains on the schema's 1-10
     // scale; presentation layers convert it to a percent for display.
     let promoted = 0
     if (promotable.length > 0) {
-      const applications = promotable.map(({ row, matched }) => ({
+      const applications = promotable.map(({ row, matched, score, reason }) => ({
         user_id: USER_ID,
         company: row.company,
         role: row.title,
@@ -212,9 +342,9 @@ serve(async (req) => {
         published_date: row.posted_date,
         status: 'To Review',
         application_status: 'discovered',
-        ai_match_score: Math.min(10, matched.length + 2),
-        score_reason: `Keyword match (${(row.raw_data as { feed?: string }).feed ?? 'rss'}): ${matched.join(', ')}`,
-        ai_reasoning: `Keyword match (${(row.raw_data as { feed?: string }).feed ?? 'rss'}): ${matched.join(', ')}`,
+        ai_match_score: score,
+        score_reason: reason,
+        ai_reasoning: reason,
         raw_data: { source_job_id: row.id, matched_keywords: matched },
       }))
       const { data, error } = await supabase
@@ -230,7 +360,10 @@ serve(async (req) => {
       fetched: rows.length,
       inserted_raw: insertedRaw.length,
       skipped_duplicates: uniqueRows.length - insertedRaw.length,
-      filtered_out: insertedRaw.length - promotable.length,
+      keyword_filtered_out: insertedRaw.length - keywordPassed.length,
+      heuristic_filtered_out: keywordPassed.length - candidates.length,
+      llm_scoring: verdicts === null ? 'fallback-keyword' : scoringModel,
+      llm_below_threshold: verdicts === null ? 0 : candidates.length - promotable.length,
       promoted_to_review: promoted,
       failures,
     }
