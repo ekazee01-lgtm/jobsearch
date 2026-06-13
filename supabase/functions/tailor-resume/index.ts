@@ -25,8 +25,9 @@ serve(async (req) => {
       throw new Error('Missing required environment variables: OPENAI_API_KEY, SUPABASE_URL, or SUPABASE_SERVICE_ROLE_KEY')
     }
 
-    // Parse request
-    const { jobId } = await req.json()
+    // Parse request. resumeLabel selects which resume template to tailor
+    // from (rows in resume_versions with job_id null); defaults to 'Master'.
+    const { jobId, resumeLabel } = await req.json()
 
     if (!jobId) {
       return new Response(
@@ -34,6 +35,7 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+    const templateLabel = typeof resumeLabel === 'string' && resumeLabel.trim() ? resumeLabel.trim() : 'Master'
 
     // Get user from Authorization header
     const authHeader = req.headers.get('Authorization')
@@ -73,17 +75,17 @@ serve(async (req) => {
       )
     }
 
-    // Get master resume
+    // Get the selected resume template
     const { data: masterResume, error: masterError } = await supabase
       .from('resume_versions')
       .select('*')
       .eq('user_id', user.id)
-      .eq('label', 'Master')
+      .eq('label', templateLabel)
       .single()
 
     if (masterError || !masterResume) {
       return new Response(
-        JSON.stringify({ error: 'Master resume not found. Please create a master resume first.' }),
+        JSON.stringify({ error: `Resume template "${templateLabel}" not found. Create it under Manage Resumes first.` }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
@@ -129,6 +131,8 @@ INSTRUCTIONS:
 
 2. **Cover Letter Creation:**
    - Follow the template structure if provided, otherwise use fallback structure
+   - If the template document contains MULTIPLE variants (e.g. labeled Variant 1-4 by role family), select the ONE variant that best matches this job's role family and write the letter following that variant — never include the selection instructions or multiple variants in the output
+   - Fill every bracketed placeholder ([Date], [Company Name], [Role Title], [PERSONALIZE: ...]) with real values inferred from the job details; today's date is ${new Date().toISOString().slice(0, 10)}
    - Select the opening hook that matches this role type:
      * AI Implementation/Enablement: Focus on building systems + scaling adoption
      * Product/Program Management: Focus on bridging capability with adoption
@@ -188,13 +192,15 @@ Return your response as a JSON object with these exact keys:
       match_analysis: 'Analysis not available'
     }
 
-    // Save tailored resume version
+    // Save tailored resume version. Timestamp suffix keeps labels unique when
+    // the same job is re-tailored (resume_versions has UNIQUE(user_id, label)).
+    const stamp = new Date().toISOString().slice(0, 16).replace('T', ' ')
     const { data: tailoredVersion, error: saveError } = await supabase
       .from('resume_versions')
       .insert({
         user_id: user.id,
         job_id: jobId,
-        label: `Tailored: ${job.company} - ${job.role}`,
+        label: `Tailored: ${job.company} - ${job.role} (${stamp})`,
         resume_md: parsed.tailored_resume,
         cover_letter_md: parsed.cover_letter
       })

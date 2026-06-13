@@ -247,3 +247,6 @@ assets/
 /MEMORY.md
 .codex
 .claude/settings.local.json
+
+# Personal materials seed (PII — load into Supabase, never commit to public repo)
+supabase/seed/

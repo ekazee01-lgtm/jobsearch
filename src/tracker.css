@@ -533,6 +533,38 @@
     font-variant-numeric: tabular-nums;
 }
 
+.modal-subtitle {
+    color: var(--text-2);
+    font-size: 0.88rem;
+    margin: 0.25rem 0 1rem;
+}
+
+.tailor-template-label {
+    display: block;
+    font-weight: 500;
+    font-size: 0.85rem;
+    color: var(--text-2);
+    margin-bottom: 0.35rem;
+}
+
+.resume-section select,
+.resume-section input[type="text"] {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-family: inherit;
+    font-size: 0.92rem;
+    background: var(--surface);
+}
+
+.resume-section select:focus,
+.resume-section input[type="text"]:focus {
+    border-color: var(--accent);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
 /* ============================================================================
    Resume management
    ============================================================================ */

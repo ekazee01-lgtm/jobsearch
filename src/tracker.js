@@ -278,6 +278,7 @@ function setupEventListeners() {
     // AI Features buttons
     document.getElementById('setup-ai-btn').addEventListener('click', setupAIFeatures);
     document.getElementById('manage-resume-btn').addEventListener('click', openResumeManagement);
+    document.getElementById('manage-cover-btn').addEventListener('click', openCoverLetterManagement);
 
     // Filter buttons
     document.getElementById('toggle-filters-btn').addEventListener('click', toggleFilters);
@@ -951,6 +952,20 @@ window.openAIActions = async function(jobId) {
     // Update modal title
     document.getElementById('ai-modal-title').textContent = `🤖 AI Actions: ${job.role} at ${job.company}`;
 
+    // Populate the "tailor from" template picker (Master default)
+    await refreshResumeTemplates();
+    const templateSelect = document.getElementById('tailor-template-select');
+    templateSelect.innerHTML = '';
+    resumeTemplates.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t.label;
+        option.textContent = t.label;
+        templateSelect.appendChild(option);
+    });
+    if (resumeTemplates.some(t => t.label === 'Master')) {
+        templateSelect.value = 'Master';
+    }
+
     // Load resume versions for this job
     await loadResumeVersions(jobId);
 
@@ -979,7 +994,8 @@ window.tailorResumeForJob = async function() {
         btn.textContent = 'Tailoring...';
         statusDiv.innerHTML = '<div class="loading-spinner">🔄 AI is analyzing the job and tailoring your resume...</div>';
 
-        const result = await aiFeatures.tailorResume(currentJobId, currentUser.id);
+        const resumeLabel = document.getElementById('tailor-template-select').value || 'Master';
+        const result = await aiFeatures.tailorResume(currentJobId, currentUser.id, resumeLabel);
 
         statusDiv.innerHTML = `<div class="success">✅ Resume tailored successfully! Version: ${result.label}</div>`;
         btn.textContent = '✨ Tailor Resume with AI';
@@ -1098,36 +1114,62 @@ function getEventEmoji(eventType) {
     return emojis[eventType] || '📝';
 }
 
-// Resume Management
-window.openResumeManagement = async function() {
-    if (!currentUser) return;
+// Resume Template Management — multiple reusable versions keyed by label
+let resumeTemplates = [];
+const NEW_TEMPLATE_VALUE = '__new__';
 
-    // Initialize AI features if needed
+async function refreshResumeTemplates() {
     if (!aiFeatures) {
         aiFeatures = new AIFeaturesSecure(supabase);
     }
+    resumeTemplates = await aiFeatures.getResumeTemplates(currentUser.id);
+    return resumeTemplates;
+}
 
-    // Load existing master resume and cover letter template
-    if (aiFeatures) {
-        // Load master resume
-        const masterResume = await aiFeatures.getMasterResume(currentUser.id);
-        if (masterResume) {
-            document.getElementById('master-resume').value = masterResume.resume_md || '';
-        }
+function renderResumeTemplateSelect(selectedLabel) {
+    const select = document.getElementById('resume-template-select');
+    select.innerHTML = '';
+    resumeTemplates.forEach(t => {
+        const option = document.createElement('option');
+        option.value = t.label;
+        option.textContent = t.label;
+        select.appendChild(option);
+    });
+    const newOption = document.createElement('option');
+    newOption.value = NEW_TEMPLATE_VALUE;
+    newOption.textContent = '➕ New template…';
+    select.appendChild(newOption);
+    select.value = selectedLabel && resumeTemplates.some(t => t.label === selectedLabel)
+        ? selectedLabel
+        : (resumeTemplates[0]?.label ?? NEW_TEMPLATE_VALUE);
+}
 
-        // Load cover letter template from separate record
-        const { data: coverTemplate, error } = await supabase
-            .from('resume_versions')
-            .select('cover_letter_md')
-            .eq('user_id', currentUser.id)
-            .eq('label', 'Cover Letter Template')
-            .single();
+window.onResumeTemplateChange = function() {
+    const selected = document.getElementById('resume-template-select').value;
+    const labelInput = document.getElementById('resume-template-label');
+    const textarea = document.getElementById('master-resume');
+    const deleteBtn = document.getElementById('delete-resume-template-btn');
 
-        if (coverTemplate && !error) {
-            document.getElementById('cover-letter-template').value = coverTemplate.cover_letter_md || '';
-        }
+    if (selected === NEW_TEMPLATE_VALUE) {
+        labelInput.value = '';
+        labelInput.disabled = false;
+        textarea.value = '';
+        deleteBtn.style.display = 'none';
+        return;
     }
+    const template = resumeTemplates.find(t => t.label === selected);
+    labelInput.value = template?.label ?? '';
+    // Renaming Master would orphan the default tailor path — lock its name
+    labelInput.disabled = selected === 'Master';
+    textarea.value = template?.resume_md ?? '';
+    deleteBtn.style.display = selected === 'Master' ? 'none' : 'inline-flex';
+}
 
+window.openResumeManagement = async function() {
+    if (!currentUser) return;
+    await refreshResumeTemplates();
+    renderResumeTemplateSelect('Master');
+    onResumeTemplateChange();
     document.getElementById('resume-modal').style.display = 'block';
 }
 
@@ -1135,41 +1177,97 @@ window.closeResumeModal = function() {
     document.getElementById('resume-modal').style.display = 'none';
 }
 
-window.saveMasterResume = async function() {
+window.saveResumeTemplate = async function() {
     if (!currentUser) return;
 
+    const selected = document.getElementById('resume-template-select').value;
+    const label = selected === 'Master' ? 'Master' : document.getElementById('resume-template-label').value.trim();
     const resumeText = document.getElementById('master-resume').value;
-    const coverLetterText = document.getElementById('cover-letter-template').value;
 
+    if (!label) {
+        alert('Please give the template a name');
+        return;
+    }
+    if (label === 'Cover Letter Template') {
+        alert('That name is reserved — use Manage Cover Letters for the cover letter template');
+        return;
+    }
     if (!resumeText.trim()) {
-        alert('Please enter your resume content');
+        alert('Please enter the resume content');
         return;
     }
 
-    // Initialize AI features if needed
-    if (!aiFeatures) {
-        aiFeatures = new AIFeaturesSecure(supabase);
-    }
-
     try {
-        // Save master resume
-        const { error: resumeError } = await supabase
+        const { error } = await supabase
             .from('resume_versions')
             .upsert({
                 user_id: currentUser.id,
-                label: 'Master',
+                label: label,
                 resume_md: resumeText,
                 cover_letter_md: ''
             }, {
                 onConflict: 'user_id,label'
             });
+        if (error) throw error;
+    } catch (error) {
+        alert('Error saving template: ' + error.message);
+        return;
+    }
 
-        if (resumeError) {
-            throw resumeError;
-        }
+    config.showMessage(`✅ Resume template "${label}" saved!`, 'success');
+    await refreshResumeTemplates();
+    renderResumeTemplateSelect(label);
+    onResumeTemplateChange();
+}
 
-        // Save cover letter template separately
-        const { error: templateError } = await supabase
+window.deleteResumeTemplate = async function() {
+    if (!currentUser) return;
+    const selected = document.getElementById('resume-template-select').value;
+    if (selected === 'Master' || selected === NEW_TEMPLATE_VALUE) return;
+    if (!confirm(`Delete resume template "${selected}"? Tailored versions created from it are kept.`)) return;
+
+    const { error } = await supabase
+        .from('resume_versions')
+        .delete()
+        .eq('user_id', currentUser.id)
+        .eq('label', selected)
+        .is('job_id', null);
+    if (error) {
+        alert('Error deleting template: ' + error.message);
+        return;
+    }
+    config.showMessage(`🗑️ Template "${selected}" deleted`, 'info');
+    await refreshResumeTemplates();
+    renderResumeTemplateSelect('Master');
+    onResumeTemplateChange();
+}
+
+// Cover Letter Template Management
+window.openCoverLetterManagement = async function() {
+    if (!currentUser) return;
+
+    const { data: coverTemplate, error } = await supabase
+        .from('resume_versions')
+        .select('cover_letter_md')
+        .eq('user_id', currentUser.id)
+        .eq('label', 'Cover Letter Template')
+        .single();
+
+    document.getElementById('cover-letter-template').value =
+        (!error && coverTemplate) ? (coverTemplate.cover_letter_md || '') : '';
+    document.getElementById('cover-modal').style.display = 'block';
+}
+
+window.closeCoverModal = function() {
+    document.getElementById('cover-modal').style.display = 'none';
+}
+
+window.saveCoverLetterTemplate = async function() {
+    if (!currentUser) return;
+
+    const coverLetterText = document.getElementById('cover-letter-template').value;
+    try {
+        const { error } = await supabase
             .from('resume_versions')
             .upsert({
                 user_id: currentUser.id,
@@ -1179,18 +1277,14 @@ window.saveMasterResume = async function() {
             }, {
                 onConflict: 'user_id,label'
             });
-
-        if (templateError) {
-            throw templateError;
-        }
-
+        if (error) throw error;
     } catch (error) {
-        alert('Error saving materials: ' + error.message);
+        alert('Error saving cover letter template: ' + error.message);
         return;
     }
 
-    config.showMessage('✅ Master resume saved successfully!', 'success');
-    closeResumeModal();
+    config.showMessage('✅ Cover letter template saved!', 'success');
+    closeCoverModal();
 }
 
 // Application Preview

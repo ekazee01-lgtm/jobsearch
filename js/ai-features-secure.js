@@ -112,9 +112,10 @@ class AIFeaturesSecure {
     }
 
     /**
-     * Tailor resume for specific job using secure Edge Function
+     * Tailor resume for specific job using secure Edge Function.
+     * resumeLabel selects which resume template to tailor from ('Master' default).
      */
-    async tailorResume(jobId, userId) {
+    async tailorResume(jobId, userId, resumeLabel = 'Master') {
         try {
             // Get current session token for authentication
             const { data: { session } } = await this.supabase.auth.getSession();
@@ -130,7 +131,8 @@ class AIFeaturesSecure {
                     'Authorization': `Bearer ${session.access_token}`
                 },
                 body: JSON.stringify({
-                    jobId: jobId
+                    jobId: jobId,
+                    resumeLabel: resumeLabel
                 })
             });
 
@@ -260,6 +262,28 @@ class AIFeaturesSecure {
         }
 
         return data || [];
+    }
+
+    /**
+     * Get reusable resume templates (not tied to a job, not the cover letter
+     * template row) — e.g. 'Master', 'Extended'.
+     */
+    async getResumeTemplates(userId) {
+        const { data, error } = await this.supabase
+            .from('resume_versions')
+            .select('id, label, resume_md, created_at')
+            .eq('user_id', userId)
+            .is('job_id', null)
+            .neq('label', 'Cover Letter Template')
+            .order('created_at', { ascending: true });
+
+        if (error) {
+            console.error('Error fetching resume templates:', error);
+            return [];
+        }
+
+        // A template must have resume content; skips legacy empty rows
+        return (data || []).filter(v => (v.resume_md || '').trim().length > 0);
     }
 
     /**
