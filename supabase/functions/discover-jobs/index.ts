@@ -33,11 +33,11 @@ const FEEDS: FeedSource[] = [
   { name: 'Google Alert 3', url: 'https://www.google.com/alerts/feeds/14300375354423668492/16331894078291876616', titleFormat: 'plain' },
   { name: 'Google Alert 4', url: 'https://www.google.com/alerts/feeds/14300375354423668492/16143147402762450619', titleFormat: 'plain' },
   { name: 'Google Alert 5', url: 'https://www.google.com/alerts/feeds/14300375354423668492/14045647346583799887', titleFormat: 'plain' },
-  // AI-specific boards added per search-criteria v1 (June 2026)
-  { name: 'Remotive – AI', url: 'https://remotive.com/remote-jobs/feed/ai', titleFormat: 'company-colon-role' },
-  { name: 'aijobs.net', url: 'https://aijobs.net/feed/', titleFormat: 'plain' },
-  { name: 'Himalayas', url: 'https://himalayas.app/jobs/rss', titleFormat: 'plain' },
-  { name: 'mljobs.io', url: 'https://mljobs.io/rss.xml', titleFormat: 'plain' },
+  // AI-relevant boards (verified live 2026-06-13; the AI-specific Remotive/
+  // aijobs.net/mljobs URLs 404'd, so use Remotive's general feed + Himalayas,
+  // letting the keyword pre-filter + LLM scoring select AI roles).
+  { name: 'Remotive', url: 'https://remotive.com/remote-jobs/feed', titleFormat: 'role-at-company' },
+  { name: 'Himalayas', url: 'https://himalayas.app/jobs/rss', titleFormat: 'role-at-company' },
 ]
 
 // Cheap pre-filter: at least one AI/role-family term must appear before the
@@ -79,8 +79,8 @@ function isExcludedTitle(title: string): boolean {
 // LLM's base role-fit score, capped at 10.
 const FRONTIER_LABS = [
   'anthropic', 'openai', 'deepmind', 'google labs', 'meta ai', 'xai', 'grok',
-  'microsoft ai', 'azure ai', 'copilot', 'bedrock', 'aws ai', 'cohere', 'mistral',
-  'inflection ai', 'adept', 'stability ai', 'hugging face',
+  'microsoft ai', 'azure ai', 'copilot', 'bedrock', 'aws ai', 'amazon', 'apple',
+  'cohere', 'mistral', 'inflection ai', 'adept', 'runway', 'stability ai', 'hugging face',
 ]
 const AI_FORWARD = [
   'scale ai', 'outlier', 'surge ai', 'invisible', 'dataannotation', 'accenture',
@@ -173,7 +173,7 @@ async function scoreWithLlm(
     i,
     title: c.title,
     company: c.company,
-    description: (c.description ?? '').slice(0, 600),
+    description: (c.description ?? '').slice(0, 1500),
   }))
   const body: Record<string, unknown> = {
     model,
@@ -292,7 +292,11 @@ async function fetchFeed(feed: FeedSource, userId: string): Promise<RawJobRow[]>
       if (!link || !rawTitle) continue
 
       const { title, company } = splitTitle(rawTitle, feed.titleFormat)
-      const descriptionSource = entry.description?.value ?? entry.content?.value ?? ''
+      // Prefer the longer of content vs description — RSS <description> is often
+      // a truncated snippet while <content:encoded> carries the full posting.
+      const descA = entry.description?.value ?? ''
+      const descB = entry.content?.value ?? ''
+      const descriptionSource = descB.length > descA.length ? descB : descA
       rows.push({
         user_id: userId,
         source: feed.name,
@@ -369,10 +373,9 @@ serve(async (req) => {
       .map((row) => {
         const text = `${row.title} ${row.description ?? ''}`
         const matched = matchKeywords(text, RELEVANT_KEYWORDS)
-        const excluded = matchKeywords(text, EXCLUDE_KEYWORDS)
-        return { row, matched, excluded }
+        return { row, matched }
       })
-      .filter(({ matched, excluded }) => matched.length > 0 && excluded.length === 0)
+      .filter(({ matched }) => matched.length > 0)
 
     // Stage 2b: noise + hard-exclusion heuristics. Google Alerts surface news
     // articles with company 'Unknown' — require a second keyword hit for those.
@@ -405,17 +408,21 @@ serve(async (req) => {
       .map(({ row, matched }, i) => {
         const verdict = verdicts?.get(i) ?? null
         const base = verdict ? verdict.score : Math.min(10, matched.length + 2)
-        const emp = employerBonus(row.company)
-        const score = Math.min(10, base + emp.bonus)
         const tier = verdict?.tier ?? '0'
+        // Employer bonus applies ONLY to Tier 1/2 roles (per guidance Section 2),
+        // or in keyword-fallback mode where tiers aren't available.
+        const emp = employerBonus(row.company)
+        const bonusApplies = emp.flag && (tier === '1' || tier === '2' || verdicts === null)
+        const bonus = bonusApplies ? emp.bonus : 0
+        const score = Math.min(10, base + bonus)
         const reason = verdict
-          ? `${scoringModel} (tier ${tier}${emp.flag ? `, +${emp.bonus} ${emp.group}` : ''}): ${verdict.reason}`
-          : `Keyword match${emp.flag ? ` (+${emp.bonus} ${emp.group})` : ''}: ${matched.join(', ')}`
-        return { row, matched, score, reason, tier, employer: emp }
+          ? `${scoringModel} (tier ${tier}${bonusApplies ? `, +${bonus} ${emp.group}` : ''}): ${verdict.reason}`
+          : `Keyword match${bonusApplies ? ` (+${bonus} ${emp.group})` : ''}: ${matched.join(', ')}`
+        return { row, matched, score, reason, tier, employer: { ...emp, bonusApplies } }
       })
-      // Without verdicts (fallback) promote heuristic survivors; with verdicts
-      // enforce the 7+ threshold (employer bonus already folded into score).
-      .filter(({ score }) => verdicts === null || score >= scoreThreshold)
+      // Always enforce the threshold — including keyword-fallback scores — so a
+      // scoring outage can't flood the tracker with unscored jobs.
+      .filter(({ score }) => score >= scoreThreshold)
 
     // Stage 3: promote into job_applications as 'To Review'.
     let promoted = 0
@@ -438,7 +445,7 @@ serve(async (req) => {
           matched_keywords: matched,
           tier,
           employer_group: employer.group,
-          employer_flagged: employer.flag,
+          employer_bonus_applied: employer.bonusApplies,
         },
       }))
       const { data, error } = await supabase

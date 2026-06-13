@@ -79,7 +79,7 @@ supabase secrets set USER_ID=<auth-user-uuid>
 supabase secrets set NOTIFICATION_EMAIL=ekazee.careers@gmail.com
 supabase secrets set RESEND_API_KEY=<key>   # optional; daily-digest skips email if absent
 supabase secrets set AI_SCORING_MODEL=gpt-5.4-nano   # optional; discover-jobs scoring model
-supabase secrets set AI_SCORE_THRESHOLD=6            # optional; min 1-10 score to promote
+supabase secrets set AI_SCORE_THRESHOLD=7            # optional; min 1-10 score to promote (code default 7)
 supabase secrets set TAILORING_MODEL=gpt-4o-mini     # optional; tailor-resume + process-ready-jobs model
 
 # 3. Store the same cron secret in Vault from the SQL editor
@@ -101,6 +101,38 @@ supabase db push
 #    The Positioning Profile row gates auto-tailoring — until it exists,
 #    process-ready-jobs intentionally skips (won't tailor from a stale resume).
 ```
+
+## Weekly Health Checks (search-criteria Section 6)
+
+Run in the SQL editor; review weekly.
+
+```sql
+-- 1. Feed health: sources that produced rows in the last 7 days
+select raw_data->>'feed' as feed, count(*) as rows_7d
+from public.job_raw
+where created_at > now() - interval '7 days'
+group by 1 order by 2 desc;
+
+-- 2. Scoring distribution of the last 100 promoted jobs.
+--    Healthy band is roughly 3-15% at score 7+ overall intake; if the tracker
+--    fills too slowly the criteria/feeds may be too narrow, too fast too lenient.
+select ai_match_score, count(*)
+from (select ai_match_score from public.job_applications
+      order by created_at desc limit 100) recent
+group by 1 order by 1 desc;
+
+-- 3. Tier / employer mix of recent promotions
+select raw_data->>'tier' as tier,
+       raw_data->>'employer_group' as employer_group,
+       count(*)
+from public.job_applications
+where created_at > now() - interval '7 days'
+group by 1, 2 order by 3 desc;
+```
+
+Deferred (need infra not run here): lab career-page scraping, LinkedIn scraping,
+the legal-AI 20% cap, and web-researched cover-letter personalization. See
+`private/search-criteria.md`.
 
 ## Verification
 
