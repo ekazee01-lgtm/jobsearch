@@ -146,6 +146,8 @@ serve(async (req) => {
         model: TAILORING_MODEL,
         prompt_version: PROMPT_VERSION,
         template_label: templateLabel,
+        role_family: parsed.role_family || '',
+        keywords_matched: parsed.keywords_matched || '',
         unsupported_requirements: parsed.unsupported_requirements || ''
       }
     })

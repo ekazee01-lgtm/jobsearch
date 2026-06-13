@@ -33,19 +33,71 @@ const FEEDS: FeedSource[] = [
   { name: 'Google Alert 3', url: 'https://www.google.com/alerts/feeds/14300375354423668492/16331894078291876616', titleFormat: 'plain' },
   { name: 'Google Alert 4', url: 'https://www.google.com/alerts/feeds/14300375354423668492/16143147402762450619', titleFormat: 'plain' },
   { name: 'Google Alert 5', url: 'https://www.google.com/alerts/feeds/14300375354423668492/14045647346583799887', titleFormat: 'plain' },
+  // AI-specific boards added per search-criteria v1 (June 2026)
+  { name: 'Remotive – AI', url: 'https://remotive.com/remote-jobs/feed/ai', titleFormat: 'company-colon-role' },
+  { name: 'aijobs.net', url: 'https://aijobs.net/feed/', titleFormat: 'plain' },
+  { name: 'Himalayas', url: 'https://himalayas.app/jobs/rss', titleFormat: 'plain' },
+  { name: 'mljobs.io', url: 'https://mljobs.io/rss.xml', titleFormat: 'plain' },
 ]
 
-// Preserved from the earlier automation prototype.
+// Cheap pre-filter: at least one AI/role-family term must appear before the
+// LLM scores it. Compiled from search-criteria Section 1 (Tier 1 + Tier 2).
 const RELEVANT_KEYWORDS = [
-  'ai', 'artificial intelligence', 'machine learning', 'ml',
-  'python', 'aws', 'cloud', 'implementation', 'consulting',
-  'data science', 'automation', 'genai', 'llm', 'nlp',
-  'delivery consultant', 'solution architect', 'enablement',
+  'ai', 'artificial intelligence', 'machine learning', 'llm', 'genai', 'generative ai',
+  'rlhf', 'red team', 'model evaluation', 'ai safety', 'ai evaluation', 'prompt',
+  'agentic', 'ai workflow', 'ai automation', 'ai ops', 'mcp', 'n8n', 'mlops',
+  'ai adoption', 'ai enablement', 'ai implementation', 'ai training', 'ai readiness',
+  'ai onboarding', 'ai solutions', 'ai coach', 'digital adoption', 'enablement',
+  'trust and safety', 'policy operations', 'ai policy', 'responsible ai', 'ai governance',
+  'content moderation', 'ai program', 'ai project', 'ai delivery', 'ai product operations',
+  'annotation', 'annotator', 'human feedback', 'model trainer', 'legal ai', 'harvey',
 ]
-const EXCLUDE_KEYWORDS = [
-  'sales', 'marketing', 'recruiter', 'hr', 'accounting',
-  'finance', 'legal', 'paralegal', 'nurse', 'doctor',
+
+// Hard title exclusions (search-criteria Section 7) — applied to the title only,
+// before scoring, regardless of keywords.
+const EXCLUDED_TITLE_PATTERNS = [
+  /\bsoftware\s+engineer\b/i, /\bdata\s+scientist\b/i, /\bml\s+engineer\b/i,
+  /\bmachine\s+learning\s+engineer\b/i, /\bresearch\s+scientist\b/i,
+  /\bdata\s+engineer\b/i, /\bback[\s-]?end\s+engineer\b/i, /\bfront[\s-]?end\s+engineer\b/i,
+  /\bfull[\s-]?stack\b/i, /\bdevops\b/i,
 ]
+const EXCLUDED_PROFESSION_PATTERNS = [
+  /\battorney\b/i, /\bparalegal\b/i, /\bnurse\b/i, /\bphysician\b/i,
+  /\bpharmacist\b/i, /\baccountant\b/i, /\bcpa\b/i,
+]
+function isExcludedTitle(title: string): boolean {
+  // Exception: AI Implementation/Enablement Engineer may pass (ops, not coding)
+  const aiEngineerException = /\bai\s+(implementation|enablement)\s+engineer\b/i.test(title)
+  if (!aiEngineerException && EXCLUDED_TITLE_PATTERNS.some((re) => re.test(title))) return true
+  if (EXCLUDED_PROFESSION_PATTERNS.some((re) => re.test(title))) return true
+  // 'Analyst' standalone (no AI) is excluded
+  if (/\banalyst\b/i.test(title) && !/\bai\b|artificial intelligence/i.test(title)) return true
+  return false
+}
+
+// Priority employers (search-criteria Section 2). Bonus added in code after the
+// LLM's base role-fit score, capped at 10.
+const FRONTIER_LABS = [
+  'anthropic', 'openai', 'deepmind', 'google labs', 'meta ai', 'xai', 'grok',
+  'microsoft ai', 'azure ai', 'copilot', 'bedrock', 'aws ai', 'cohere', 'mistral',
+  'inflection ai', 'adept', 'stability ai', 'hugging face',
+]
+const AI_FORWARD = [
+  'scale ai', 'outlier', 'surge ai', 'invisible', 'dataannotation', 'accenture',
+  'quantumblack', 'mckinsey', 'bcg x', 'boston consulting', 'deloitte', 'watson',
+  'ibm consulting', 'salesforce', 'einstein', 'servicenow', 'workday', 'sap ai',
+]
+const LEGAL_AI = [
+  'harvey', 'casetext', 'thomson reuters', 'ironclad', 'lexisnexis', 'relativity',
+  'contractpodai', 'luminance', 'spellbook',
+]
+function employerBonus(company: string): { bonus: number; flag: boolean; group: string | null } {
+  const c = company.toLowerCase()
+  if (FRONTIER_LABS.some((e) => c.includes(e))) return { bonus: 2, flag: true, group: 'frontier-lab' }
+  if (AI_FORWARD.some((e) => c.includes(e))) return { bonus: 1, flag: true, group: 'ai-forward' }
+  if (LEGAL_AI.some((e) => c.includes(e))) return { bonus: 1, flag: true, group: 'legal-ai' }
+  return { bonus: 0, flag: false, group: null }
+}
 
 const FETCH_TIMEOUT_MS = 20_000
 const MAX_DESCRIPTION_CHARS = 5_000
@@ -91,26 +143,31 @@ function looksNonEnglish(title: string): boolean {
   return /[ãõçáàâéêíóôúüñöäß]/i.test(title) || /\(m\/[wfx]\/[dx]\)/i.test(title)
 }
 
-const PROFILE = `Candidate profile: AI adoption & implementation specialist with 12+ years in
-legal technology. Target roles: AI implementation/enablement, solutions consulting,
-AI product/program management, AI governance & risk, delivery consulting, customer
-enablement. Strong fit: roles bridging AI capability with user adoption, training,
-process change. Weak fit: pure software-engineering stack roles (e.g. Rails, Angular,
-PHP, .NET development), roles requiring deep ML research, non-English-language roles.
-Not jobs at all (score 1): news articles, blog posts, market commentary.`
+// Generic fallback profile used only when no 'Scoring Profile' row is seeded.
+// The full candidate profile (incl. compensation targets) lives in the DB to
+// keep PII out of this public repo.
+const FALLBACK_PROFILE = `CANDIDATE PROFILE SUMMARY:
+- 12+ years enterprise technology deployment and enablement; hands-on RLHF
+  evaluation, rubric design, adversarial prompting (Outlier/Scale AI); agentic
+  workflow design (Claude, n8n, MCP, Supabase); production AI deployment.
+- Not an engineer (BS Biology); targets AI-native operational/enablement roles,
+  not software-engineering or ML-research roles.
+- Located Dallas-Fort Worth; open to remote/hybrid/travel.`
 
 interface LlmVerdict {
   score: number
   reason: string
+  tier: string
 }
 
-// One batched call scoring every candidate 1-10 against the profile.
-// Returns null on any failure so the caller can fall back to keyword scoring —
-// discovery must never break because the scoring model misbehaved.
+// One batched call scoring every candidate 1-10 for ROLE FIT (employer bonus is
+// applied separately in code). Returns null on any failure so the caller can
+// fall back to keyword scoring — discovery must never break on model issues.
 async function scoreWithLlm(
   candidates: Array<{ title: string; company: string; description: string | null }>,
   apiKey: string,
   model: string,
+  profileText: string,
 ): Promise<Map<number, LlmVerdict> | null> {
   const items = candidates.map((c, i) => ({
     i,
@@ -123,12 +180,34 @@ async function scoreWithLlm(
     messages: [
       {
         role: 'user',
-        content: `${PROFILE}
+        content: `You are a job relevance scorer for a specific candidate.
 
-Score each job posting below 1-10 for how well it matches the candidate profile
-(10 = ideal target role, 1 = irrelevant or not a job posting). Judge from the
-title, company, and description excerpt. Return ONLY a JSON object:
-{"scores": [{"i": <item index>, "score": <1-10 integer>, "reason": "<one short sentence>"}, ...]}
+${profileText}
+
+Score each posting 1-10 for ROLE FIT only (ignore employer prestige — an
+employer bonus is applied separately). Use these bands:
+- 9-10: role explicitly requires RLHF/model evaluation, rubric design, red
+  teaming, adversarial testing, AI workflow/agentic design, or AI adoption at
+  scale, and requires NO PhD or engineering degree.
+- 7-8: a target family below, no PhD/ML-engineering degree required, work
+  involves evaluation, enablement, workflow, operations, or adoption.
+- 5-6: AI-adjacent but requires heavy engineering/coding, OR legal tech with no
+  AI component.
+- 3-4: traditional IT/help desk with no AI, gig/task-based annotation, or
+  requires an active law/medical/CPA license.
+- 1-2: requires PhD/ML-engineering degree or 5+ years software engineering;
+  pure software dev, data science, or ML research; salary stated below $80k; or
+  on-site outside Dallas-Fort Worth with no remote option.
+Score 1 if it requires security clearance, a JD/law degree, nursing/medical
+license, or is gig/1099 task-based annotation work.
+
+Target families and tier: Tier 1 = AI Quality/Red Team/Evaluation; Prompt
+Operations/AI Workflow; Learning & Enablement/AI Adoption; Trust & Safety/Policy;
+AI Program/Project Management. Tier 2 = expert AI Trainer/Annotator (ONLY if
+W-2 or a named 3+ month contract — gig/task work is Tier 0) and Legal AI/
+Enterprise AI. Set "tier" to "1", "2", or "0".
+
+Return ONLY: {"scores":[{"i":<index>,"score":<1-10>,"reason":"<one sentence>","tier":"0|1|2"}]}
 Include every item exactly once.
 
 Job postings:
@@ -158,7 +237,7 @@ ${JSON.stringify(items)}`,
     }
     const result = await res.json()
     const content = result.choices?.[0]?.message?.content ?? ''
-    const parsed = JSON.parse(content) as { scores?: Array<{ i: number; score: number; reason: string }> }
+    const parsed = JSON.parse(content) as { scores?: Array<{ i: number; score: number; reason: string; tier?: string }> }
     if (!Array.isArray(parsed.scores)) {
       console.error('LLM scoring returned unexpected shape:', content.slice(0, 300))
       return null
@@ -169,6 +248,7 @@ ${JSON.stringify(items)}`,
         verdicts.set(s.i, {
           score: Math.max(1, Math.min(10, Math.round(s.score))),
           reason: String(s.reason ?? '').slice(0, 500),
+          tier: ['1', '2'].includes(String(s.tier)) ? String(s.tier) : '0',
         })
       }
     }
@@ -294,45 +374,53 @@ serve(async (req) => {
       })
       .filter(({ matched, excluded }) => matched.length > 0 && excluded.length === 0)
 
-    // Stage 2b: noise heuristics. Google Alerts surface news articles with
-    // company 'Unknown' — require a second keyword hit for those. Drop
-    // non-English titles outright.
+    // Stage 2b: noise + hard-exclusion heuristics. Google Alerts surface news
+    // articles with company 'Unknown' — require a second keyword hit for those.
+    // Drop non-English titles and hard-excluded titles (Section 7) outright.
     const candidates = keywordPassed.filter(({ row, matched }) => {
       if (looksNonEnglish(row.title)) return false
+      if (isExcludedTitle(row.title)) return false
       if (row.company === 'Unknown' && matched.length < 2) return false
       return true
     })
 
-    // Stage 2c: LLM scoring (model configurable via AI_SCORING_MODEL,
-    // threshold via AI_SCORE_THRESHOLD). Falls back to keyword-count scoring
-    // if the API key is absent or the call fails.
+    // Candidate scoring profile: prefer the seeded 'Scoring Profile' (carries
+    // compensation targets etc.), fall back to the generic in-code summary.
+    const { data: scoringProfileRow } = await supabase
+      .from('resume_versions').select('resume_md')
+      .eq('user_id', USER_ID).eq('label', 'Scoring Profile').single()
+    const profileText = scoringProfileRow?.resume_md?.trim() || FALLBACK_PROFILE
+
+    // Stage 2c: LLM role-fit scoring (model via AI_SCORING_MODEL, threshold via
+    // AI_SCORE_THRESHOLD, default 7). Falls back to keyword scoring on failure.
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
     const scoringModel = Deno.env.get('AI_SCORING_MODEL') || 'gpt-5.4-nano'
-    const scoreThreshold = Number(Deno.env.get('AI_SCORE_THRESHOLD') || '6')
+    const scoreThreshold = Number(Deno.env.get('AI_SCORE_THRESHOLD') || '7')
     let verdicts: Map<number, LlmVerdict> | null = null
     if (OPENAI_API_KEY && candidates.length > 0) {
-      verdicts = await scoreWithLlm(candidates.map(({ row }) => row), OPENAI_API_KEY, scoringModel)
+      verdicts = await scoreWithLlm(candidates.map(({ row }) => row), OPENAI_API_KEY, scoringModel, profileText)
     }
 
     const promotable = candidates
       .map(({ row, matched }, i) => {
         const verdict = verdicts?.get(i) ?? null
-        const score = verdict ? verdict.score : Math.min(10, matched.length + 2)
+        const base = verdict ? verdict.score : Math.min(10, matched.length + 2)
+        const emp = employerBonus(row.company)
+        const score = Math.min(10, base + emp.bonus)
+        const tier = verdict?.tier ?? '0'
         const reason = verdict
-          ? `${scoringModel}: ${verdict.reason}`
-          : `Keyword match (${(row.raw_data as { feed?: string }).feed ?? 'rss'}): ${matched.join(', ')}`
-        return { row, matched, score, reason }
+          ? `${scoringModel} (tier ${tier}${emp.flag ? `, +${emp.bonus} ${emp.group}` : ''}): ${verdict.reason}`
+          : `Keyword match${emp.flag ? ` (+${emp.bonus} ${emp.group})` : ''}: ${matched.join(', ')}`
+        return { row, matched, score, reason, tier, employer: emp }
       })
-      // Without verdicts (fallback mode) promote everything that survived the
-      // heuristics, as before; with verdicts enforce the threshold.
+      // Without verdicts (fallback) promote heuristic survivors; with verdicts
+      // enforce the 7+ threshold (employer bonus already folded into score).
       .filter(({ score }) => verdicts === null || score >= scoreThreshold)
 
-    // Stage 3: promote into job_applications as 'To Review' so the cards show
-    // up in the tracker's first column. Score remains on the schema's 1-10
-    // scale; presentation layers convert it to a percent for display.
+    // Stage 3: promote into job_applications as 'To Review'.
     let promoted = 0
     if (promotable.length > 0) {
-      const applications = promotable.map(({ row, matched, score, reason }) => ({
+      const applications = promotable.map(({ row, matched, score, reason, tier, employer }) => ({
         user_id: USER_ID,
         company: row.company,
         role: row.title,
@@ -345,7 +433,13 @@ serve(async (req) => {
         ai_match_score: score,
         score_reason: reason,
         ai_reasoning: reason,
-        raw_data: { source_job_id: row.id, matched_keywords: matched },
+        raw_data: {
+          source_job_id: row.id,
+          matched_keywords: matched,
+          tier,
+          employer_group: employer.group,
+          employer_flagged: employer.flag,
+        },
       }))
       const { data, error } = await supabase
         .from('job_applications')

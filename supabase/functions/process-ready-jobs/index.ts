@@ -11,6 +11,7 @@ import { generateTailoredMaterials, TAILORING_MODEL, PROMPT_VERSION } from '../_
 
 const TRIGGER_STATUS = 'Applying'
 const MAX_PER_RUN = 4 // bound generations per run; cron repeats to catch up
+const LOCK_TTL_MINUTES = 15
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -25,6 +26,16 @@ serve(async (req) => {
     if (!USER_ID) throw new Error('Missing USER_ID')
     if (!OPENAI_API_KEY) throw new Error('Missing OPENAI_API_KEY')
     const supabase = createAdminClient()
+
+    // Edge Functions can be terminated before finally runs. Expire abandoned
+    // claims so a crashed invocation cannot block a job permanently.
+    const staleBefore = new Date(Date.now() - LOCK_TTL_MINUTES * 60_000).toISOString()
+    const { error: staleLockErr } = await supabase
+      .from('tailoring_locks')
+      .delete()
+      .eq('user_id', USER_ID)
+      .lt('claimed_at', staleBefore)
+    if (staleLockErr) throw new Error(`stale-lock cleanup failed: ${staleLockErr.message}`)
 
     // Candidate jobs: in the apply stage, oldest first
     const { data: applyingJobs, error: jobsErr } = await supabase
@@ -94,8 +105,12 @@ serve(async (req) => {
         .from('tailoring_locks')
         .insert({ job_id: job.id, user_id: USER_ID })
       if (claimErr) {
-        // Unique violation — another run is generating this job right now
-        claimSkipped++
+        if (claimErr.code === '23505') {
+          // Unique violation — another run is generating this job right now
+          claimSkipped++
+          continue
+        }
+        failures.push({ job_id: job.id, error: `claim failed: ${claimErr.message}` })
         continue
       }
 
@@ -139,6 +154,8 @@ serve(async (req) => {
             prompt_version: PROMPT_VERSION,
             template_label: 'Master',
             source: 'process-ready-jobs',
+            role_family: result.role_family,
+            keywords_matched: result.keywords_matched,
             unsupported_requirements: result.unsupported_requirements,
           },
         })
@@ -150,7 +167,15 @@ serve(async (req) => {
       } finally {
         // Release the claim: transient lock, not a permanent processed-marker.
         // Dedup across runs is handled by the resume_versions existence check.
-        await supabase.from('tailoring_locks').delete().eq('job_id', job.id)
+        const { error: releaseErr } = await supabase
+          .from('tailoring_locks')
+          .delete()
+          .eq('job_id', job.id)
+          .eq('user_id', USER_ID)
+        if (releaseErr) {
+          console.error(`lock release failed for job ${job.id}:`, releaseErr.message)
+          failures.push({ job_id: job.id, error: `lock release failed: ${releaseErr.message}` })
+        }
       }
     }
 

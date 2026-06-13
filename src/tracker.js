@@ -158,6 +158,7 @@ function createJobCard(job) {
     const card = document.createElement('div');
     card.className = 'job-card';
     card.dataset.jobId = job.id;
+    const safeJobId = escapeHtml(job.id);
 
     const daysAgo = Math.floor((Date.now() - new Date(job.created_at)) / (1000 * 60 * 60 * 24));
 
@@ -188,26 +189,26 @@ function createJobCard(job) {
 
     card.innerHTML = `
         <div class="job-card-header">
-            <input type="checkbox" class="job-select-checkbox" data-job-id="${job.id}" onchange="handleJobSelection()">
-            <h4>${job.role}</h4>
+            <input type="checkbox" class="job-select-checkbox" data-job-id="${safeJobId}" onchange="handleJobSelection()">
+            <h4>${escapeHtml(job.role)}</h4>
         </div>
-        <div class="company">${job.company}</div>
+        <div class="company">${escapeHtml(job.company)}</div>
         <div class="meta">
-            ${columnSettings.showLocation && job.location ? `<span>📍 ${job.location}</span>` : ''}
+            ${columnSettings.showLocation && job.location ? `<span>📍 ${escapeHtml(job.location)}</span>` : ''}
             <span>📅 ${daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}</span>
             ${columnSettings.showAppliedDate && job.date_applied ? `<span>✅ Applied ${formatDate(job.date_applied)}</span>` : ''}
-            ${columnSettings.showSource && job.source ? `<span>🔗 ${job.source}</span>` : ''}
+            ${columnSettings.showSource && job.source ? `<span>🔗 ${escapeHtml(job.source)}</span>` : ''}
             ${columnSettings.showSalary ? salaryRange : ''}
             ${columnSettings.showExcitement ? excitement : ''}
             ${columnSettings.showAiMatch ? matchScore : ''}
             ${columnSettings.showDeadline ? deadlineWarning : ''}
             ${columnSettings.showFollowUp ? followUpIndicator : ''}
         </div>
-        ${job.description ? `<div style="margin-top: 0.5rem; font-size: 0.875rem; color: #666;">${job.description.substring(0, 100)}${job.description.length > 100 ? '...' : ''}</div>` : ''}
+        ${job.description ? `<div style="margin-top: 0.5rem; font-size: 0.875rem; color: #666;">${escapeHtml(job.description.substring(0, 100))}${job.description.length > 100 ? '...' : ''}</div>` : ''}
         <div class="actions">
-            <button class="edit-btn" onclick="editJob('${job.id}')">Edit</button>
-            <button class="ai-btn" onclick="openAIActions('${job.id}')">🤖 AI</button>
-            <button class="delete-btn" onclick="deleteJob('${job.id}')">Delete</button>
+            <button class="edit-btn" onclick="editJob('${safeJobId}')">Edit</button>
+            <button class="ai-btn" onclick="openAIActions('${safeJobId}')">🤖 AI</button>
+            <button class="delete-btn" onclick="deleteJob('${safeJobId}')">Delete</button>
         </div>
     `;
 
@@ -859,10 +860,10 @@ function renderAlerts(containerId, alerts) {
     }
 
     container.innerHTML = alerts.map(alert => `
-        <div class="alert-item ${alert.type}">
-            <div class="alert-title">${alert.job.role} at ${alert.job.company}</div>
-            <div class="alert-meta">${alert.message}</div>
-            ${alert.job.follow_up_notes ? `<div class="alert-meta">Note: ${alert.job.follow_up_notes}</div>` : ''}
+        <div class="alert-item ${['info', 'warning', 'danger'].includes(alert.type) ? alert.type : 'info'}">
+            <div class="alert-title">${escapeHtml(alert.job.role)} at ${escapeHtml(alert.job.company)}</div>
+            <div class="alert-meta">${escapeHtml(alert.message)}</div>
+            ${alert.job.follow_up_notes ? `<div class="alert-meta">Note: ${escapeHtml(alert.job.follow_up_notes)}</div>` : ''}
         </div>
     `).join('');
 }
@@ -927,10 +928,11 @@ function handleFollowUpAlert(payload) {
 function showAlert(message, type = 'info') {
     // Create alert element
     const alert = document.createElement('div');
-    alert.className = `alert alert-${type}`;
+    const safeType = ['info', 'success', 'warning', 'error', 'danger'].includes(type) ? type : 'info';
+    alert.className = `alert alert-${safeType}`;
     alert.innerHTML = `
         <div class="alert-content">
-            <span>${message}</span>
+            <span>${escapeHtml(message)}</span>
             <button onclick="this.parentElement.parentElement.remove()" class="alert-close">&times;</button>
         </div>
     `;
@@ -1336,10 +1338,12 @@ window.saveCoverLetterTemplate = async function() {
 // Application Preview
 function showApplicationPreview(emailContent) {
     document.getElementById('email-subject').textContent = emailContent.subject;
-    document.getElementById('cover-letter-preview').innerHTML =
-        emailContent.body.replace(/\n/g, '<br>');
-    document.getElementById('resume-preview').innerHTML =
-        emailContent.resume.replace(/\n/g, '<br>');
+    const coverLetterPreview = document.getElementById('cover-letter-preview');
+    const resumePreview = document.getElementById('resume-preview');
+    coverLetterPreview.textContent = emailContent.body;
+    resumePreview.textContent = emailContent.resume;
+    coverLetterPreview.style.whiteSpace = 'pre-wrap';
+    resumePreview.style.whiteSpace = 'pre-wrap';
 
     document.getElementById('application-preview-modal').style.display = 'block';
 }
