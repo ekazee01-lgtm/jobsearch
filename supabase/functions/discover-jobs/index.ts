@@ -9,7 +9,7 @@
 // Required secrets: CRON_SECRET, USER_ID (tracker owner's auth.users id).
 // Optional secrets: OPENAI_API_KEY (enables LLM scoring; keyword fallback
 // otherwise), AI_SCORING_MODEL (default gpt-5.4-nano), AI_SCORE_THRESHOLD
-// (default 6 — minimum 1-10 score to reach the tracker).
+// (default 7 — minimum 1-10 score to reach the tracker).
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { parseFeed } from 'https://deno.land/x/rss@1.1.2/mod.ts'
@@ -291,7 +291,16 @@ async function fetchFeed(feed: FeedSource, userId: string): Promise<RawJobRow[]>
       const rawTitle = entry.title?.value ?? ''
       if (!link || !rawTitle) continue
 
-      const { title, company } = splitTitle(rawTitle, feed.titleFormat)
+      let { title, company } = splitTitle(rawTitle, feed.titleFormat)
+      // Some feeds (e.g. Himalayas) carry the employer in a custom namespaced
+      // field rather than the title — recover it when the title gave 'Unknown'.
+      if (company === 'Unknown') {
+        const e = entry as unknown as Record<string, { value?: string } | undefined>
+        for (const k of ['himalayasjobs:companyname', 'company', 'dc:creator', 'author']) {
+          const v = e[k]?.value
+          if (v && v.trim()) { company = stripHtml(v); break }
+        }
+      }
       // Prefer the longer of content vs description — RSS <description> is often
       // a truncated snippet while <content:encoded> carries the full posting.
       const descA = entry.description?.value ?? ''
@@ -409,10 +418,10 @@ serve(async (req) => {
         const verdict = verdicts?.get(i) ?? null
         const base = verdict ? verdict.score : Math.min(10, matched.length + 2)
         const tier = verdict?.tier ?? '0'
-        // Employer bonus applies ONLY to Tier 1/2 roles (per guidance Section 2),
-        // or in keyword-fallback mode where tiers aren't available.
+        // Employer bonus applies ONLY to Tier 1/2 roles (per guidance Section 2).
+        // In keyword-fallback mode there is no tier verdict, so no bonus is added.
         const emp = employerBonus(row.company)
-        const bonusApplies = emp.flag && (tier === '1' || tier === '2' || verdicts === null)
+        const bonusApplies = emp.flag && (tier === '1' || tier === '2')
         const bonus = bonusApplies ? emp.bonus : 0
         const score = Math.min(10, base + bonus)
         const reason = verdict

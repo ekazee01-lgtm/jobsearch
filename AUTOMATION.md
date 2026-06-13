@@ -17,7 +17,7 @@ pg_cron (inside Supabase Postgres)
         with company "Unknown" need 2+ keyword hits)
      5. LLM scoring: one batched OpenAI call scores survivors 1-10
         against the candidate profile (model: AI_SCORING_MODEL secret,
-        default gpt-5.4-nano; threshold: AI_SCORE_THRESHOLD, default 6;
+        default gpt-5.4-nano; threshold: AI_SCORE_THRESHOLD, default 7;
         falls back to keyword-count scoring if the call fails)
      6. promote passing jobs into public.job_applications as "To Review"
 
@@ -107,18 +107,28 @@ supabase db push
 Run in the SQL editor; review weekly.
 
 ```sql
--- 1. Feed health: sources that produced rows in the last 7 days
-select raw_data->>'feed' as feed, count(*) as rows_7d
-from public.job_raw
-where created_at > now() - interval '7 days'
-group by 1 order by 2 desc;
+-- 1. Feed health: ALL configured feeds vs rows produced in the last 7 days.
+--    A 0 row count means that feed produced nothing — investigate it.
+with configured(feed) as (values
+  ('RemoteOK – AI/Automation/Implementation'), ('RemoteOK – Consulting/Enablement'),
+  ('WeWorkRemotely – Programming'), ('WeWorkRemotely – Management/Finance'),
+  ('Google Alert 1'), ('Google Alert 2'), ('Google Alert 3'), ('Google Alert 4'),
+  ('Google Alert 5'), ('Remotive'), ('Himalayas'))
+select c.feed, count(r.id) as rows_7d
+from configured c
+left join public.job_raw r
+  on r.raw_data->>'feed' = c.feed and r.created_at > now() - interval '7 days'
+group by c.feed order by rows_7d asc;
 
--- 2. Scoring distribution of the last 100 promoted jobs.
---    Healthy band is roughly 3-15% at score 7+ overall intake; if the tracker
---    fills too slowly the criteria/feeds may be too narrow, too fast too lenient.
-select ai_match_score, count(*)
-from (select ai_match_score from public.job_applications
-      order by created_at desc limit 100) recent
+-- 2. Promotion volume per day (proxy for criteria tightness). NOTE: the full
+--    intake-score distribution is NOT measurable here — only jobs scoring >= the
+--    threshold are promoted and carry a score; rejected scores aren't stored.
+--    Too few promotions/day suggests criteria/feeds too narrow; a sudden spike
+--    suggests scoring too lenient. (To measure true intake %, store scores on
+--    job_raw for all scored candidates — deferred.)
+select date_trunc('day', created_at)::date as day, count(*) as promoted
+from public.job_applications
+where created_at > now() - interval '14 days'
 group by 1 order by 1 desc;
 
 -- 3. Tier / employer mix of recent promotions
