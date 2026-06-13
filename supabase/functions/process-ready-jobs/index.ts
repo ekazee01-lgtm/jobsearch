@@ -69,13 +69,45 @@ serve(async (req) => {
       .from('resume_versions').select('cover_letter_md')
       .eq('user_id', USER_ID).eq('label', 'Positioning Profile').single()
 
+    // Gate: don't auto-generate from a not-yet-seeded setup. The Positioning
+    // Profile only exists once the user has run the seed (which also installs
+    // the current Master), so its absence means "not ready" — skip the run
+    // rather than tailor from a stale/old resume.
+    if (!profile?.cover_letter_md?.trim()) {
+      return jsonResponse({
+        success: true,
+        gated: 'Positioning Profile not found — run the seed before auto-tailoring.',
+        candidates: jobs.length,
+        tailored: 0,
+      })
+    }
+
     const stampBase = new Date().toISOString().slice(0, 16).replace('T', ' ')
     let tailored = 0
     const failures: Array<{ job_id: string; error: string }> = []
 
     // Serial generation to respect rate limits and the function time budget
+    let claimSkipped = 0
     for (const job of todo) {
+      // Atomic claim: PK on job_id means only one concurrent run can hold it.
+      const { error: claimErr } = await supabase
+        .from('tailoring_locks')
+        .insert({ job_id: job.id, user_id: USER_ID })
+      if (claimErr) {
+        // Unique violation — another run is generating this job right now
+        claimSkipped++
+        continue
+      }
+
       try {
+        // Re-verify under the lock: a concurrent run may have just finished one
+        const { data: nowExisting } = await supabase
+          .from('resume_versions').select('id')
+          .eq('user_id', USER_ID).eq('job_id', job.id).limit(1)
+        if (nowExisting && nowExisting.length > 0) {
+          continue
+        }
+
         const result = await generateTailoredMaterials({
           openaiApiKey: OPENAI_API_KEY,
           job,
@@ -115,6 +147,10 @@ serve(async (req) => {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`tailor failed for job ${job.id}:`, msg)
         failures.push({ job_id: job.id, error: msg })
+      } finally {
+        // Release the claim: transient lock, not a permanent processed-marker.
+        // Dedup across runs is handled by the resume_versions existence check.
+        await supabase.from('tailoring_locks').delete().eq('job_id', job.id)
       }
     }
 
@@ -123,6 +159,7 @@ serve(async (req) => {
       candidates: jobs.length,
       tailored,
       skipped: jobs.length - todo.length,
+      claim_skipped: claimSkipped,
       remaining: Math.max(0, jobs.length - alreadyTailored.size - tailored),
       failures,
     }

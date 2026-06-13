@@ -118,6 +118,21 @@ export async function generateTailoredMaterials(opts: {
   if (!parsed.tailored_resume?.trim()) throw new Error('Model returned no resume content — not saving.')
   if (!parsed.cover_letter?.trim()) throw new Error('Model returned no cover letter — not saving.')
 
+  // Factual integrity check: every percentage in the tailored resume must trace
+  // to a number present in the master. Catches invented/inflated metrics that
+  // prompt rules alone cannot guarantee. Lenient (integer part vs any master
+  // digits) so range endpoints like 30-50% don't false-trip.
+  const masterDigits = new Set((opts.masterResumeMd.match(/\d+/g) || []))
+  const resumePercents = parsed.tailored_resume.match(/\d+(?:\.\d+)?%/g) || []
+  const invented = [...new Set(
+    resumePercents
+      .map((p) => p.replace('%', '').split('.')[0])
+      .filter((n) => !masterDigits.has(n))
+  )]
+  if (invented.length > 0) {
+    throw new Error(`Refusing to save: resume contains percentage(s) not supported by the master (${invented.map((n) => n + '%').join(', ')}). Possible fabrication.`)
+  }
+
   return {
     tailored_resume: parsed.tailored_resume,
     cover_letter: parsed.cover_letter,

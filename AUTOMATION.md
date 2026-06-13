@@ -26,12 +26,24 @@ pg_cron (inside Supabase Postgres)
      2. summarize pipeline counts
      3. email digest via Resend
 
+  -> every 10 min -> Edge Function: process-ready-jobs (durable auto-tailoring)
+     1. find jobs the user moved to the "Applying" stage lacking materials
+     2. gate: skip unless a Positioning Profile is seeded
+     3. atomic per-job claim (tailoring_locks) so overlapping runs can't double
+     4. generate via the shared tailoring core (Master + Positioning Profile),
+        validate, refuse to save fabricated/truncated output
+     5. save into public.resume_versions + log provenance to application_events
+
 Tracker UI (GitHub Pages)
-  -> drag card to "Ready to Apply"
-  -> click Tailor
-  -> Edge Function: tailor-resume
-  -> generated materials saved into public.resume_versions
+  -> move a card to "Applying" (Edit -> Status, or bulk)  ==> auto-tailored server-side
+  -> OR click the AI button on a card for instant tailoring from a chosen template
+  -> generated materials saved into public.resume_versions (review before sending)
 ```
+
+Materials are always drafts to review — nothing is auto-submitted. The tailoring
+model may use only facts present in the Master resume; it cannot invent metrics
+(percentages absent from the master are rejected), employers, dates, or company
+facts, and the job description is treated as untrusted input.
 
 ## What Replaced The Old Workflow Plan
 
@@ -39,7 +51,8 @@ Tracker UI (GitHub Pages)
 |---|---|
 | Job discovery + relevance filter | `discover-jobs` + `pg_cron` |
 | Daily digest / tracker summary | `daily-digest` + `pg_cron` |
-| Resume tailoring | `tailor-resume` Edge Function |
+| Resume tailoring (manual) | `tailor-resume` Edge Function (AI button) |
+| Auto-tailoring on apply | `process-ready-jobs` + `pg_cron` (server-side, durable) |
 | Gmail auto-reply workflow | Deferred |
 | Weekly analytics workflow | Dropped |
 | VPS-hosted workflow engine | Removed |
@@ -67,6 +80,7 @@ supabase secrets set NOTIFICATION_EMAIL=ekazee.careers@gmail.com
 supabase secrets set RESEND_API_KEY=<key>   # optional; daily-digest skips email if absent
 supabase secrets set AI_SCORING_MODEL=gpt-5.4-nano   # optional; discover-jobs scoring model
 supabase secrets set AI_SCORE_THRESHOLD=6            # optional; min 1-10 score to promote
+supabase secrets set TAILORING_MODEL=gpt-4o-mini     # optional; tailor-resume + process-ready-jobs model
 
 # 3. Store the same cron secret in Vault from the SQL editor
 #    select vault.create_secret('<same-random-string>', 'cron_secret');
@@ -74,12 +88,18 @@ supabase secrets set AI_SCORE_THRESHOLD=6            # optional; min 1-10 score 
 # 4. Deploy the functions
 supabase functions deploy discover-jobs --no-verify-jwt
 supabase functions deploy daily-digest --no-verify-jwt
+supabase functions deploy process-ready-jobs --no-verify-jwt
 supabase functions deploy tailor-resume
 
-# 5. Enable the server-side extensions and apply the cron migration
+# 5. Enable the server-side extensions and apply the migrations
 #    create extension if not exists pg_cron;
 #    create extension if not exists pg_net;
 supabase db push
+
+# 6. Seed your materials (PII — local, gitignored): paste
+#    supabase/seed/seed_eric_materials.sql into the SQL editor and run it.
+#    The Positioning Profile row gates auto-tailoring — until it exists,
+#    process-ready-jobs intentionally skips (won't tailor from a stale resume).
 ```
 
 ## Verification

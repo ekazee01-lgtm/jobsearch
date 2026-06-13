@@ -25,6 +25,17 @@ let columnSettings = {
     showLocation: true
 };
 
+// Escape text before putting it in innerHTML. Model output and job data come
+// from untrusted sources (LLM, RSS feeds) and must never be injected raw.
+function escapeHtml(text) {
+    return String(text ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 function formatAiMatchPercent(score) {
     if (score === null || score === undefined || score === '') {
         return '';
@@ -352,7 +363,9 @@ async function handleJobSubmit(e) {
     e.preventDefault();
 
     const jobId = document.getElementById('job-id').value;
-    const movingToApply = document.getElementById('status').value === AUTO_TAILOR_STATUS;
+    const prevStatus = jobId ? (jobs.find(j => j.id?.toString() === jobId.toString())?.status ?? null) : null;
+    const movingToApply = document.getElementById('status').value === AUTO_TAILOR_STATUS
+        && prevStatus !== AUTO_TAILOR_STATUS;
     const jobData = {
         company: document.getElementById('company').value,
         role: document.getElementById('role').value,
@@ -560,6 +573,14 @@ window.confirmBulkStatusChange = async function() {
 
     if (!newStatus || selectedJobIds.length === 0) return;
 
+    // Only jobs genuinely transitioning into the apply stage get a "queued" note
+    const transitioningCount = newStatus === AUTO_TAILOR_STATUS
+        ? selectedJobIds.filter(id => {
+            const j = jobs.find(x => x.id?.toString() === id.toString());
+            return j && j.status !== AUTO_TAILOR_STATUS;
+        }).length
+        : 0;
+
     try {
         // Update all selected jobs in database
         const { error } = await supabase
@@ -584,8 +605,8 @@ window.confirmBulkStatusChange = async function() {
 
         closeBulkActionsModal();
         config.showMessage(`✅ Updated ${selectedJobIds.length} job(s) to ${newStatus}`, 'success');
-        if (newStatus === AUTO_TAILOR_STATUS) {
-            config.showMessage('✨ Queued for auto-tailoring — materials appear within minutes.', 'info');
+        if (transitioningCount > 0) {
+            config.showMessage(`✨ ${transitioningCount} job(s) queued for auto-tailoring — materials appear within minutes.`, 'info');
         }
 
     } catch (error) {
@@ -1012,9 +1033,9 @@ window.tailorResumeForJob = async function() {
 
         const gaps = (result.unsupported_requirements || '').trim();
         const gapNote = gaps
-            ? `<div class="alert-item warning" style="margin-top:0.5rem"><strong>Review before sending — requirements not clearly supported by your resume:</strong> ${gaps}</div>`
+            ? `<div class="alert-item warning" style="margin-top:0.5rem"><strong>Review before sending — requirements not clearly supported by your resume:</strong> ${escapeHtml(gaps)}</div>`
             : '';
-        statusDiv.innerHTML = `<div class="success">✅ Draft created: ${result.label}. Review it before applying.</div>${gapNote}`;
+        statusDiv.innerHTML = `<div class="success">✅ Draft created: ${escapeHtml(result.label)}. Review it before applying.</div>${gapNote}`;
         btn.textContent = '✨ Tailor Resume with AI';
 
         // Reload resume versions and show application section
@@ -1026,7 +1047,7 @@ window.tailorResumeForJob = async function() {
 
     } catch (error) {
         console.error('Error tailoring resume:', error);
-        statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+        statusDiv.innerHTML = `<div class="error">❌ Error: ${escapeHtml(error.message)}</div>`;
         btn.textContent = '✨ Tailor Resume with AI';
     } finally {
         btn.disabled = false;
@@ -1084,7 +1105,7 @@ window.prepareApplication = async function() {
 
     } catch (error) {
         console.error('Error preparing application:', error);
-        statusDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+        statusDiv.innerHTML = `<div class="error">❌ Error: ${escapeHtml(error.message)}</div>`;
     } finally {
         btn.disabled = false;
         btn.textContent = '📤 Prepare Application';
@@ -1108,12 +1129,20 @@ async function loadJobEvents(jobId) {
         const time = new Date(event.created_at).toLocaleTimeString();
         const emoji = getEventEmoji(event.type);
 
+        // Surface auto-tailor warnings (incl. cron-generated) and provenance
+        const gaps = (event.payload?.unsupported_requirements || '').trim();
+        const via = event.payload?.source === 'process-ready-jobs' ? ' (auto)' : '';
+        const gapNote = gaps
+            ? `<div class="alert-item warning" style="margin:0.25rem 0 0.5rem">Review before sending — not clearly supported: ${escapeHtml(gaps)}</div>`
+            : '';
+
         return `
             <div class="event-item">
                 <span class="event-emoji">${emoji}</span>
-                <span class="event-type">${event.type}</span>
+                <span class="event-type">${escapeHtml(event.type)}${via}</span>
                 <span class="event-time">${date} ${time}</span>
             </div>
+            ${gapNote}
         `;
     }).join('');
 
