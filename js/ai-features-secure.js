@@ -150,7 +150,9 @@ class AIFeaturesSecure {
             // Return the result with the expected format
             return {
                 id: result.resume_version_id,
-                label: result.label
+                label: result.label,
+                match_analysis: result.match_analysis || '',
+                unsupported_requirements: result.unsupported_requirements || ''
             };
 
         } catch (error) {

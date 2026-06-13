@@ -1046,7 +1046,11 @@ window.tailorResumeForJob = async function() {
         const resumeLabel = document.getElementById('tailor-template-select').value || 'Master';
         const result = await aiFeatures.tailorResume(currentJobId, currentUser.id, resumeLabel);
 
-        statusDiv.innerHTML = `<div class="success">✅ Resume tailored successfully! Version: ${result.label}</div>`;
+        const gaps = (result.unsupported_requirements || '').trim();
+        const gapNote = gaps
+            ? `<div class="alert-item warning" style="margin-top:0.5rem"><strong>Review before sending — requirements not clearly supported by your resume:</strong> ${gaps}</div>`
+            : '';
+        statusDiv.innerHTML = `<div class="success">✅ Draft created: ${result.label}. Review it before applying.</div>${gapNote}`;
         btn.textContent = '✨ Tailor Resume with AI';
 
         // Reload resume versions and show application section
