@@ -352,8 +352,7 @@ async function handleJobSubmit(e) {
     e.preventDefault();
 
     const jobId = document.getElementById('job-id').value;
-    // Capture the stage before saving, to detect a transition into the apply stage
-    const previousStatus = jobId ? (jobs.find(j => j.id?.toString() === jobId.toString())?.status ?? null) : null;
+    const movingToApply = document.getElementById('status').value === AUTO_TAILOR_STATUS;
     const jobData = {
         company: document.getElementById('company').value,
         role: document.getElementById('role').value,
@@ -401,9 +400,8 @@ async function handleJobSubmit(e) {
     closeJobModal();
     await loadJobs();
 
-    // Fire-and-forget auto-tailor when an existing card enters the apply stage
-    if (jobId) {
-        maybeAutoTailor(jobId, jobData.status, previousStatus);
+    if (movingToApply) {
+        config.showMessage('✨ Queued for auto-tailoring — materials will appear within a few minutes.', 'info');
     }
 }
 
@@ -562,14 +560,6 @@ window.confirmBulkStatusChange = async function() {
 
     if (!newStatus || selectedJobIds.length === 0) return;
 
-    // Jobs genuinely transitioning into the apply stage (for auto-tailor)
-    const transitioningIds = newStatus === AUTO_TAILOR_STATUS
-        ? selectedJobIds.filter(id => {
-            const j = jobs.find(x => x.id?.toString() === id.toString());
-            return j && j.status !== AUTO_TAILOR_STATUS;
-        })
-        : [];
-
     try {
         // Update all selected jobs in database
         const { error } = await supabase
@@ -594,10 +584,8 @@ window.confirmBulkStatusChange = async function() {
 
         closeBulkActionsModal();
         config.showMessage(`✅ Updated ${selectedJobIds.length} job(s) to ${newStatus}`, 'success');
-
-        // Auto-tailor each newly-applying job, serially to respect rate limits
-        for (const id of transitioningIds) {
-            await maybeAutoTailor(id, newStatus, 'other');
+        if (newStatus === AUTO_TAILOR_STATUS) {
+            config.showMessage('✨ Queued for auto-tailoring — materials appear within minutes.', 'info');
         }
 
     } catch (error) {
@@ -952,34 +940,10 @@ async function initializeAI() {
     aiFeatures = new AIFeaturesSecure(supabase);
 }
 
-// Stage that triggers automatic resume + cover letter tailoring.
+// The apply stage that the server-side process-ready-jobs cron watches.
+// Moving a card here triggers durable auto-tailoring on the backend (no
+// browser-side generation), so a closed tab can't leave a job un-tailored.
 const AUTO_TAILOR_STATUS = 'Applying';
-
-// When a card enters the apply stage, generate tailored materials in the
-// background from the Master template — no per-job clicking. Idempotent: skips
-// jobs that already have tailored materials. Runs fire-and-forget; the user is
-// kept informed via toasts.
-async function maybeAutoTailor(jobId, newStatus, oldStatus) {
-    if (!currentUser) return;
-    if (newStatus !== AUTO_TAILOR_STATUS || oldStatus === AUTO_TAILOR_STATUS) return;
-    if (!aiFeatures) aiFeatures = new AIFeaturesSecure(supabase);
-
-    try {
-        // Don't re-tailor a job that already has generated materials
-        const existing = await aiFeatures.getResumeVersions(currentUser.id, jobId);
-        if (existing && existing.length > 0) return;
-
-        const job = jobs.find(j => j.id?.toString() === jobId.toString());
-        const label = job ? `${job.role} at ${job.company}` : 'this job';
-        config.showMessage(`✨ Auto-tailoring resume for ${label}…`, 'info');
-
-        await aiFeatures.tailorResume(jobId, currentUser.id, 'Master');
-        config.showMessage(`✅ Tailored materials ready for ${label}`, 'success');
-    } catch (error) {
-        console.error('Auto-tailor failed:', error);
-        config.showMessage(`⚠️ Auto-tailor failed: ${error.message}. Use the 🤖 AI button to retry.`, 'error');
-    }
-}
 
 // Setup AI Features
 window.setupAIFeatures = function() {
