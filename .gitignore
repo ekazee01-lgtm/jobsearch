@@ -253,3 +253,4 @@ supabase/seed/
 
 # Private targeting strategy (comp target + search criteria — public repo)
 private/
+search-criteria/
