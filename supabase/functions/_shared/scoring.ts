@@ -198,6 +198,7 @@ export interface PromoteResult {
   keyword_filtered_out: number
   heuristic_filtered_out: number
   llm_scoring: string
+  scoring_failed: boolean
   duplicates_skipped: number
   promoted_to_review: number
 }
@@ -225,6 +226,27 @@ export async function promoteRawJobs(
     return true
   })
 
+  // Dedup vs jobs already in the tracker by normalized company+role BEFORE
+  // scoring, so a retry (where job_raw rows already exist) and already-promoted
+  // jobs aren't re-scored. URLs differ across channels (Indeed uses tracking
+  // redirects), so URL dedup alone misses these. Best-effort: a rare concurrent
+  // run could still slip one through (no DB constraint, since company+role isn't
+  // strictly unique); the job_url unique index is the hard guarantee, and a
+  // duplicate card is user-deletable.
+  let duplicatesSkipped = 0
+  let freshCandidates = candidates
+  {
+    const { data: existing } = await supabase
+      .from('job_applications').select('company, role').eq('user_id', userId)
+    const seen = new Set((existing ?? []).map((e) => dedupKey(e.company ?? '', e.role ?? '')))
+    freshCandidates = candidates.filter(({ row }) => {
+      const key = dedupKey(row.company, row.title)
+      if (seen.has(key)) { duplicatesSkipped++; return false }
+      seen.add(key)
+      return true
+    })
+  }
+
   // Candidate scoring profile (DB-injected; comp targets live there)
   const { data: scoringProfileRow } = await supabase
     .from('resume_versions').select('resume_md')
@@ -232,11 +254,15 @@ export async function promoteRawJobs(
   const profileText = scoringProfileRow?.resume_md?.trim() || FALLBACK_PROFILE
 
   let verdicts: Map<number, LlmVerdict> | null = null
-  if (openaiApiKey && candidates.length > 0) {
-    verdicts = await scoreWithLlm(candidates.map(({ row }) => row), openaiApiKey, scoringModel, profileText)
+  if (openaiApiKey && freshCandidates.length > 0) {
+    verdicts = await scoreWithLlm(freshCandidates.map(({ row }) => row), openaiApiKey, scoringModel, profileText)
   }
+  // True scoring outage (not "no key" / "nothing to score"). Callers may choose
+  // to retry rather than acknowledge, so a transient failure doesn't reject a
+  // strong role via the weaker keyword fallback and lose it.
+  const scoringFailed = !!openaiApiKey && freshCandidates.length > 0 && verdicts === null
 
-  const scored = candidates
+  const promotable = freshCandidates
     .map(({ row, matched }, i) => {
       const verdict = verdicts?.get(i) ?? null
       const base = verdict ? verdict.score : Math.min(10, matched.length + 2)
@@ -251,25 +277,6 @@ export async function promoteRawJobs(
       return { row, matched, score, reason, tier, employer: { ...emp, bonusApplies } }
     })
     .filter(({ score }) => score >= scoreThreshold)
-
-  // Dedup vs jobs already in the tracker by normalized company+role (URLs differ
-  // across channels — Indeed uses tracking redirects — so URL dedup alone misses
-  // dups). Best-effort: a rare concurrent RSS/email race could still slip one
-  // through (no DB constraint, since company+role isn't strictly unique); the
-  // job_url unique index is the hard guarantee. A duplicate card is user-deletable.
-  let promotable = scored
-  let duplicatesSkipped = 0
-  if (scored.length > 0) {
-    const { data: existing } = await supabase
-      .from('job_applications').select('company, role').eq('user_id', userId)
-    const seen = new Set((existing ?? []).map((e) => dedupKey(e.company ?? '', e.role ?? '')))
-    promotable = scored.filter(({ row }) => {
-      const key = dedupKey(row.company, row.title)
-      if (seen.has(key)) { duplicatesSkipped++; return false }
-      seen.add(key)
-      return true
-    })
-  }
 
   let promoted = 0
   if (promotable.length > 0) {
@@ -308,6 +315,7 @@ export async function promoteRawJobs(
     keyword_filtered_out: insertedRaw.length - keywordPassed.length,
     heuristic_filtered_out: keywordPassed.length - candidates.length,
     llm_scoring: verdicts === null ? 'fallback-keyword' : scoringModel,
+    scoring_failed: scoringFailed,
     duplicates_skipped: duplicatesSkipped,
     promoted_to_review: promoted,
   }

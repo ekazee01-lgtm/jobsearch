@@ -3,9 +3,13 @@
 // here, each with a stable Gmail message `id`. Idempotency is MESSAGE-LEVEL via
 // the ingested_email_messages table (not Gmail thread labels, which can't track
 // individual messages): already-recorded ids are skipped before any LLM call,
-// and a message id is recorded ONLY after it is genuinely handled. So re-sends,
-// multi-message threads, transient failures, and malformed extractions can
-// neither double-process nor silently lose a message.
+// and a message id is recorded ONLY after it is genuinely handled (promotion
+// succeeded and scoring did not fail). So re-sends, multi-message threads,
+// transient failures, malformed extractions, and a crash between job_raw insert
+// and promotion never lose a message. Concurrency note: the skip-check is a read
+// (not an atomic claim), so two overlapping runs could redundantly extract the
+// same message — that wastes an LLM call but cannot lose data or create
+// duplicate cards (promotion dedups by url and company+role).
 // Invoked with an x-cron-secret header; deploy with --no-verify-jwt.
 // Required secrets: CRON_SECRET, USER_ID, OPENAI_API_KEY.
 
@@ -97,6 +101,13 @@ ${text}`,
       console.error('extract returned jobs but none valid; will retry')
       return { status: 'retry' }
     }
+    // Some valid, some not: keep the valid ones but log the dropped malformed
+    // siblings so they aren't silently lost (retrying the whole message would
+    // re-drop them and re-process the valid ones — not worth it).
+    if (valid.length < parsed.jobs.length) {
+      const dropped = parsed.jobs.filter((j) => !isValidJob(j))
+      console.warn(`extract dropped ${dropped.length} malformed job(s) from ${email.id}:`, JSON.stringify(dropped).slice(0, 600))
+    }
     return { status: 'done', jobs: valid }
   } catch (err) {
     console.error('extract error:', err)
@@ -168,24 +179,33 @@ serve(async (req) => {
       }
     }).filter((r) => { if (seen.has(r.job_url)) return false; seen.add(r.job_url); return true })
 
-    let insertedRaw: RawJobLite[] = []
+    // Archive to job_raw, then RE-SELECT the batch's rows by url (not just the
+    // upsert-returned newly-inserted set). This makes promotion retry-safe: if a
+    // prior attempt inserted job_raw but failed before promoting, the rows still
+    // get promoted now (promoteRawJobs dedups vs existing job_applications).
+    let batchRaw: RawJobLite[] = []
     if (rawRows.length > 0) {
+      const { error: upErr } = await supabase
+        .from('job_raw').upsert(rawRows, { onConflict: 'job_url', ignoreDuplicates: true })
+      if (upErr) throw new Error(`job_raw upsert failed: ${upErr.message}`)
       const { data, error } = await supabase
-        .from('job_raw')
-        .upsert(rawRows, { onConflict: 'job_url', ignoreDuplicates: true })
-        .select('id, job_url, title, company, description, posted_date, raw_data')
-      if (error) throw new Error(`job_raw upsert failed: ${error.message}`)
-      insertedRaw = (data ?? []) as RawJobLite[]
+        .from('job_raw').select('id, job_url, title, company, description, posted_date, raw_data')
+        .in('job_url', rawRows.map((r) => r.job_url))
+      if (error) throw new Error(`job_raw reselect failed: ${error.message}`)
+      batchRaw = (data ?? []) as RawJobLite[]
     }
 
-    const promo = await promoteRawJobs(supabase, USER_ID, insertedRaw, OPENAI_API_KEY, model, scoreThreshold, 'email')
+    const promo = await promoteRawJobs(supabase, USER_ID, batchRaw, OPENAI_API_KEY, model, scoreThreshold, 'email')
 
-    // Record handled messages LAST, after promotion succeeded, so a thrown error
-    // (which 500s the request) leaves them un-recorded for a clean retry.
-    if (recordedIds.length > 0) {
+    // On a true scoring outage, do NOT record any message — retry next run so a
+    // strong role isn't rejected via keyword fallback and lost. Otherwise record
+    // handled messages LAST (after promotion), so a thrown error leaves them
+    // un-recorded for a clean retry.
+    const toRecord = promo.scoring_failed ? [] : recordedIds
+    if (toRecord.length > 0) {
       const { error } = await supabase
         .from('ingested_email_messages')
-        .upsert(recordedIds.map((message_id) => ({ message_id, user_id: USER_ID })), { onConflict: 'message_id', ignoreDuplicates: true })
+        .upsert(toRecord.map((message_id) => ({ message_id, user_id: USER_ID })), { onConflict: 'message_id', ignoreDuplicates: true })
       if (error) throw new Error(`recording message ids failed: ${error.message}`)
     }
 
@@ -194,10 +214,11 @@ serve(async (req) => {
       emails_received: inbound.length,
       already_known: knownSet.size,
       processed: fresh.length,
-      recorded: recordedIds.length,
-      retry: retryIds.length,
+      recorded: toRecord.length,
+      retry: retryIds.length + (promo.scoring_failed ? recordedIds.length : 0),
+      scoring_outage: promo.scoring_failed,
       extracted: extracted.length,
-      inserted_raw: insertedRaw.length,
+      inserted_raw: batchRaw.length,
       ...promo,
     }
     console.log('ingest-email-jobs summary:', JSON.stringify(summary))
