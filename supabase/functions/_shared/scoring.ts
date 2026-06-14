@@ -132,11 +132,14 @@ ${JSON.stringify(items)}`,
   if (model.startsWith('gpt-5')) body.reasoning_effort = 'minimal'
   else body.temperature = 0
 
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 45_000)
   try {
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: controller.signal,
     })
     if (!res.ok) {
       console.error(`LLM scoring failed: HTTP ${res.status}: ${await res.text()}`)
@@ -163,6 +166,8 @@ ${JSON.stringify(items)}`,
   } catch (err) {
     console.error('LLM scoring error:', err)
     return null
+  } finally {
+    clearTimeout(timer)
   }
 }
 
