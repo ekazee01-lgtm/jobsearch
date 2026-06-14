@@ -53,7 +53,7 @@ facts, and the job description is treated as untrusted input.
 | Daily digest / tracker summary | `daily-digest` + `pg_cron` |
 | Resume tailoring (manual) | `tailor-resume` Edge Function (AI button) |
 | Auto-tailoring on apply | `process-ready-jobs` + `pg_cron` (server-side, durable) |
-| Email job-alert ingestion | `ingest-email-jobs` + a Gmail Apps Script (every 4h) — LLM-extracts jobs from alert emails (Indeed/LinkedIn), runs the same scoring as RSS. Setup + script: [docs/email-ingest.md](docs/email-ingest.md). Idempotency is message-level server-side (`ingested_email_messages`): re-sends are skipped and only genuinely-handled messages are recorded, so transient failures and multi-message threads can't lose or double-process anything. |
+| Email job-alert ingestion | `ingest-email-jobs` + a Gmail Apps Script (every 4h) — LLM-extracts jobs from alert emails (Indeed/LinkedIn), runs the same scoring as RSS. Setup + script: [docs/email-ingest.md](docs/email-ingest.md). Completed messages are tracked in `ingested_email_messages`; failures cool down in `email_ingest_retries` and quarantine after five attempts so poison messages cannot block the queue. URL dedup is enforced; company+role dedup is best-effort under concurrent runs. |
 | Gmail auto-reply workflow | Deferred |
 | Weekly analytics workflow | Dropped |
 | VPS-hosted workflow engine | Removed |

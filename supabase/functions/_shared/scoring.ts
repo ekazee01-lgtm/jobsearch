@@ -76,10 +76,38 @@ export const FALLBACK_PROFILE = `CANDIDATE PROFILE SUMMARY:
   not software-engineering or ML-research roles.
 - Located Dallas-Fort Worth; open to remote/hybrid/travel.`
 
-interface LlmVerdict {
+export interface LlmVerdict {
   score: number
   reason: string
   tier: string
+}
+
+export function parseScoreVerdicts(content: string, candidateCount: number): Map<number, LlmVerdict> | null {
+  let parsed: { scores?: Array<{ i: number; score: number; reason: string; tier?: string }> }
+  try {
+    parsed = JSON.parse(content)
+  } catch {
+    console.error('LLM scoring returned invalid JSON:', content.slice(0, 300))
+    return null
+  }
+  if (!Array.isArray(parsed.scores) || parsed.scores.length !== candidateCount) {
+    console.error(`LLM scoring returned ${parsed.scores?.length ?? 'no'} verdicts for ${candidateCount} candidates`)
+    return null
+  }
+
+  const verdicts = new Map<number, LlmVerdict>()
+  for (const s of parsed.scores) {
+    if (!Number.isInteger(s.i) || s.i < 0 || s.i >= candidateCount || !Number.isFinite(s.score) || verdicts.has(s.i)) {
+      console.error('LLM scoring returned an invalid or duplicate candidate index:', JSON.stringify(s).slice(0, 300))
+      return null
+    }
+    verdicts.set(s.i, {
+      score: Math.max(1, Math.min(10, Math.round(s.score))),
+      reason: String(s.reason ?? '').slice(0, 500),
+      tier: ['1', '2'].includes(String(s.tier)) ? String(s.tier) : '0',
+    })
+  }
+  return verdicts.size === candidateCount ? verdicts : null
 }
 
 export async function scoreWithLlm(
@@ -147,22 +175,11 @@ ${JSON.stringify(items)}`,
     }
     const result = await res.json()
     const content = result.choices?.[0]?.message?.content ?? ''
-    const parsed = JSON.parse(content) as { scores?: Array<{ i: number; score: number; reason: string; tier?: string }> }
-    if (!Array.isArray(parsed.scores)) {
-      console.error('LLM scoring returned unexpected shape:', content.slice(0, 300))
+    if (result.choices?.[0]?.finish_reason === 'length') {
+      console.error('LLM scoring response was truncated')
       return null
     }
-    const verdicts = new Map<number, LlmVerdict>()
-    for (const s of parsed.scores) {
-      if (typeof s.i === 'number' && typeof s.score === 'number') {
-        verdicts.set(s.i, {
-          score: Math.max(1, Math.min(10, Math.round(s.score))),
-          reason: String(s.reason ?? '').slice(0, 500),
-          tier: ['1', '2'].includes(String(s.tier)) ? String(s.tier) : '0',
-        })
-      }
-    }
-    return verdicts.size > 0 ? verdicts : null
+    return parseScoreVerdicts(content, candidates.length)
   } catch (err) {
     console.error('LLM scoring error:', err)
     return null

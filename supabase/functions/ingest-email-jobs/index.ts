@@ -2,14 +2,14 @@
 // A Google Apps Script in the user's Gmail (every 4h) POSTs recent alert emails
 // here, each with a stable Gmail message `id`. Idempotency is MESSAGE-LEVEL via
 // the ingested_email_messages table (not Gmail thread labels, which can't track
-// individual messages): already-recorded ids are skipped before any LLM call,
-// and a message id is recorded ONLY after it is genuinely handled (promotion
-// succeeded and scoring did not fail). So re-sends, multi-message threads,
-// transient failures, malformed extractions, and a crash between job_raw insert
-// and promotion never lose a message. Concurrency note: the skip-check is a read
-// (not an atomic claim), so two overlapping runs could redundantly extract the
-// same message — that wastes an LLM call but cannot lose data or create
-// duplicate cards (promotion dedups by url and company+role).
+// individual messages): completed ids are skipped before any LLM call, while
+// failures use durable cooldown/retry state and quarantine after repeated
+// failures so one poison message cannot block later alerts. A message id is
+// completed ONLY after promotion succeeds and scoring does not fail.
+// Concurrency note: the skip-check is a read, not an atomic claim. Overlapping
+// runs can redundantly extract or score a message. URL uniqueness and soft
+// company+role dedup prevent most duplicate cards, but company+role dedup is
+// best-effort and cannot guarantee uniqueness under a race.
 // Invoked with an x-cron-secret header; deploy with --no-verify-jwt.
 // Required secrets: CRON_SECRET, USER_ID, OPENAI_API_KEY.
 
@@ -37,6 +37,15 @@ interface ExtractedJob {
 // MAX * EXTRACT_TIMEOUT + scoring(45s) ~= 8*20 + 45 = 205s.
 const MAX_EMAILS_PER_RUN = 8
 const EXTRACT_TIMEOUT_MS = 20_000
+const RETRY_DELAY = '8 hours'
+const MAX_RETRY_ATTEMPTS = 5
+
+interface RetryState {
+  message_id: string
+  attempt_count: number
+  next_attempt_at: string | null
+  quarantined_at: string | null
+}
 
 function isValidJob(j: ExtractedJob): boolean {
   return !!(j.title && j.title.trim() && j.company && j.company.trim())
@@ -49,7 +58,7 @@ function slugUrl(company: string, title: string): string {
 
 type ExtractOutcome =
   | { status: 'done'; jobs: ExtractedJob[] } // handled (incl. legitimately 0 jobs)
-  | { status: 'retry' } // transient/malformed — do NOT record, try again next run
+  | { status: 'retry'; reason: string } // transient/malformed — defer and retry
 
 // Extract jobs from one alert email. 'retry' on API/timeout/parse errors AND on
 // extractions that returned jobs but none were valid (likely mis-extraction —
@@ -84,22 +93,22 @@ ${text}`,
     })
     if (!res.ok) {
       console.error(`extract failed: HTTP ${res.status}: ${await res.text()}`)
-      return { status: 'retry' }
+      return { status: 'retry', reason: `extract_http_${res.status}` }
     }
     const result = await res.json()
     if (result.choices?.[0]?.finish_reason === 'length') {
       console.error('extract truncated')
-      return { status: 'retry' }
+      return { status: 'retry', reason: 'extract_truncated' }
     }
     const parsed = JSON.parse(result.choices?.[0]?.message?.content ?? '{}') as { jobs?: ExtractedJob[] }
-    if (!Array.isArray(parsed.jobs)) return { status: 'retry' }
+    if (!Array.isArray(parsed.jobs)) return { status: 'retry', reason: 'extract_unexpected_shape' }
     if (parsed.jobs.length === 0) return { status: 'done', jobs: [] }
     const valid = parsed.jobs.filter(isValidJob)
     // Jobs present but none usable => likely a bad extraction; retry rather than
     // acknowledge (within the script's newer_than window, so it's bounded).
     if (valid.length === 0) {
       console.error('extract returned jobs but none valid; will retry')
-      return { status: 'retry' }
+      return { status: 'retry', reason: 'extract_no_valid_jobs' }
     }
     // Some valid, some not: keep the valid ones but log the dropped malformed
     // siblings so they aren't silently lost (retrying the whole message would
@@ -111,7 +120,7 @@ ${text}`,
     return { status: 'done', jobs: valid }
   } catch (err) {
     console.error('extract error:', err)
-    return { status: 'retry' }
+    return { status: 'retry', reason: err instanceof Error ? `extract_error: ${err.message}` : 'extract_error' }
   } finally {
     clearTimeout(timer)
   }
@@ -133,20 +142,48 @@ serve(async (req) => {
 
     const payload = await req.json().catch(() => ({}))
     const inbound: InboundEmail[] = Array.isArray(payload?.emails) ? payload.emails : []
-    const withIds = inbound.filter((e) => e.id)
+    const uniqueInbound = new Map<string, InboundEmail>()
+    for (const email of inbound) {
+      if (email.id && !uniqueInbound.has(email.id)) uniqueInbound.set(email.id, email)
+    }
+    const withIds = [...uniqueInbound.values()]
     if (withIds.length === 0) {
       return jsonResponse({ success: true, emails_received: inbound.length, new: 0, recorded: 0, promoted_to_review: 0 })
     }
 
-    // Skip messages already handled (message-level idempotency)
+    // Skip completed, cooling-down, and quarantined messages. Cooldown makes
+    // later messages eligible on the next run even when an earlier one is poison.
     const ids = withIds.map((e) => e.id as string)
-    const { data: known } = await supabase
+    const { data: known, error: knownError } = await supabase
       .from('ingested_email_messages').select('message_id').in('message_id', ids)
+    if (knownError) throw new Error(`completed-message lookup failed: ${knownError.message}`)
     const knownSet = new Set((known ?? []).map((r) => r.message_id))
-    const fresh = withIds.filter((e) => !knownSet.has(e.id as string)).slice(0, MAX_EMAILS_PER_RUN)
+    const { data: retryRows, error: retryError } = await supabase
+      .from('email_ingest_retries')
+      .select('message_id, attempt_count, next_attempt_at, quarantined_at')
+      .in('message_id', ids)
+    if (retryError) throw new Error(`retry-state lookup failed: ${retryError.message}`)
+    const retryById = new Map((retryRows ?? []).map((r) => [r.message_id, r as RetryState]))
+    const now = Date.now()
+    let deferred = 0
+    let alreadyQuarantined = 0
+    const fresh = withIds.filter((email) => {
+      const id = email.id as string
+      if (knownSet.has(id)) return false
+      const retry = retryById.get(id)
+      if (retry?.quarantined_at) {
+        alreadyQuarantined++
+        return false
+      }
+      if (retry?.next_attempt_at && new Date(retry.next_attempt_at).getTime() > now) {
+        deferred++
+        return false
+      }
+      return true
+    }).slice(0, MAX_EMAILS_PER_RUN)
 
     const recordedIds: string[] = []
-    const retryIds: string[] = []
+    const retryReasons = new Map<string, string>()
     const extracted: ExtractedJob[] = []
     for (const email of fresh) {
       const outcome = await extractJobs(email, OPENAI_API_KEY, model)
@@ -154,7 +191,7 @@ serve(async (req) => {
         recordedIds.push(email.id as string)
         extracted.push(...outcome.jobs)
       } else {
-        retryIds.push(email.id as string)
+        retryReasons.set(email.id as string, outcome.reason)
       }
     }
 
@@ -202,20 +239,42 @@ serve(async (req) => {
     // handled messages LAST (after promotion), so a thrown error leaves them
     // un-recorded for a clean retry.
     const toRecord = promo.scoring_failed ? [] : recordedIds
+    if (promo.scoring_failed) {
+      for (const messageId of recordedIds) retryReasons.set(messageId, 'scoring_failed')
+    }
     if (toRecord.length > 0) {
-      const { error } = await supabase
-        .from('ingested_email_messages')
-        .upsert(toRecord.map((message_id) => ({ message_id, user_id: USER_ID })), { onConflict: 'message_id', ignoreDuplicates: true })
-      if (error) throw new Error(`recording message ids failed: ${error.message}`)
+      const { error } = await supabase.rpc('complete_email_ingest_messages', {
+        p_user_id: USER_ID,
+        p_message_ids: toRecord,
+      })
+      if (error) throw new Error(`completing message ids failed: ${error.message}`)
+    }
+
+    let newlyQuarantined = 0
+    if (retryReasons.size > 0) {
+      for (const [messageId, reason] of retryReasons) {
+        const { data, error } = await supabase.rpc('record_email_ingest_failure', {
+          p_message_id: messageId,
+          p_user_id: USER_ID,
+          p_error: reason,
+          p_max_attempts: MAX_RETRY_ATTEMPTS,
+          p_retry_delay: RETRY_DELAY,
+        })
+        if (error) throw new Error(`recording retry state failed for ${messageId}: ${error.message}`)
+        if (data?.[0]?.quarantined) newlyQuarantined++
+      }
     }
 
     const summary = {
       success: true,
       emails_received: inbound.length,
       already_known: knownSet.size,
+      deferred,
+      already_quarantined: alreadyQuarantined,
       processed: fresh.length,
       recorded: toRecord.length,
-      retry: retryIds.length + (promo.scoring_failed ? recordedIds.length : 0),
+      retry: retryReasons.size - newlyQuarantined,
+      newly_quarantined: newlyQuarantined,
       scoring_outage: promo.scoring_failed,
       extracted: extracted.length,
       inserted_raw: batchRaw.length,

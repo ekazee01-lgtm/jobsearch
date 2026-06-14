@@ -6,10 +6,11 @@ expiry, no third-party service. Safe to commit: it contains no secret (the
 `CRON_SECRET` is read from Script Properties at runtime; the function URL is
 public but useless without the header).
 
-Idempotency is **message-level on the server** (`ingested_email_messages`): the
-script just sends recent alert messages each run, and `ingest-email-jobs` skips
-ones it has already handled and processes a bounded number of new ones, so
-nothing double-processes or gets lost — no Gmail labels involved.
+Idempotency is **message-level on the server**. `ingested_email_messages` records
+completed messages; `email_ingest_retries` gives failed messages an eight-hour
+cooldown and quarantines them after five attempts. This prevents a malformed
+message from blocking later alerts and leaves terminal failures visible for
+inspection and manual requeue. No Gmail labels are involved.
 
 ## One-time setup
 
@@ -70,10 +71,25 @@ function ingestJobEmails() {
 
 ## Notes
 - The script re-sends recent messages each run; the server skips already-handled
-  ones (cheap, before any LLM call) and advances through new ones a few per run,
-  so a backlog clears over successive runs without losing or duplicating any.
+  messages and temporarily skips failures during their retry cooldown, allowing
+  later messages to advance through the bounded queue.
+- A partial, duplicate-index, out-of-range, or truncated scoring response fails
+  the whole scoring batch. Messages remain uncompleted and retry later rather
+  than being rejected by keyword fallback.
+- After five failed attempts a message is quarantined instead of retrying
+  forever. Inspect or requeue quarantined messages in the Supabase SQL editor:
+  ```sql
+  select message_id, attempt_count, last_error, last_attempt_at, quarantined_at
+  from public.email_ingest_retries
+  where quarantined_at is not null
+  order by quarantined_at desc;
+
+  delete from public.email_ingest_retries
+  where message_id = '<gmail-message-id>';
+  ```
 - Indeed flags many roles as "bad match" (old profile); the scoring filters those
   — only role-fit 7+ jobs reach the tracker.
-- Dedup: a job already in the tracker (normalized company+role) is skipped, so an
-  email job that RSS already found won't duplicate.
+- Dedup: URL uniqueness is enforced by the database. Normalized company+role
+  dedup catches most RSS/email variants, but it is best-effort under overlapping
+  runs because company+role is not a database uniqueness constraint.
 - To capture more boards, add their alert sender addresses to `SENDERS`.
