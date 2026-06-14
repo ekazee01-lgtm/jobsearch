@@ -53,6 +53,7 @@ facts, and the job description is treated as untrusted input.
 | Daily digest / tracker summary | `daily-digest` + `pg_cron` |
 | Resume tailoring (manual) | `tailor-resume` Edge Function (AI button) |
 | Auto-tailoring on apply | `process-ready-jobs` + `pg_cron` (server-side, durable) |
+| Email job-alert ingestion | `ingest-email-jobs` + a Gmail Apps Script (every 4h) — LLM-extracts jobs from alert emails (Indeed/LinkedIn), runs the same scoring as RSS. Setup + script: `private/email-ingest-appsscript.md`. The script labels only emails the function confirms via `processed_ids`, so transient failures retry rather than being lost. |
 | Gmail auto-reply workflow | Deferred |
 | Weekly analytics workflow | Dropped |
 | VPS-hosted workflow engine | Removed |
@@ -89,6 +90,7 @@ supabase secrets set TAILORING_MODEL=gpt-4o-mini     # optional; tailor-resume +
 supabase functions deploy discover-jobs --no-verify-jwt
 supabase functions deploy daily-digest --no-verify-jwt
 supabase functions deploy process-ready-jobs --no-verify-jwt
+supabase functions deploy ingest-email-jobs --no-verify-jwt
 supabase functions deploy tailor-resume
 
 # 5. Enable the server-side extensions and apply the migrations

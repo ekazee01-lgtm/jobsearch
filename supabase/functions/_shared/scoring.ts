@@ -166,6 +166,19 @@ ${JSON.stringify(items)}`,
   }
 }
 
+// Normalized key for soft company+role dedup: lowercase, drop common company
+// suffixes (Inc/LLC/Ltd/Corp/Co) and punctuation, collapse whitespace. Catches
+// "Deepgram" vs "Deepgram, Inc.".
+function dedupKey(company: string, role: string): string {
+  const norm = (s: string) =>
+    s.toLowerCase()
+      .replace(/[.,]/g, ' ')
+      .replace(/\b(inc|llc|ltd|corp|corporation|co|gmbh|sa|plc)\b/g, ' ')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim()
+  return `${norm(company)}|${norm(role)}`
+}
+
 export interface RawJobLite {
   id: string
   job_url: string | null
@@ -234,16 +247,19 @@ export async function promoteRawJobs(
     })
     .filter(({ score }) => score >= scoreThreshold)
 
-  // Dedup vs jobs already in the tracker by company+role (URLs differ across
-  // channels — Indeed uses tracking redirects — so URL dedup alone misses dups).
+  // Dedup vs jobs already in the tracker by normalized company+role (URLs differ
+  // across channels — Indeed uses tracking redirects — so URL dedup alone misses
+  // dups). Best-effort: a rare concurrent RSS/email race could still slip one
+  // through (no DB constraint, since company+role isn't strictly unique); the
+  // job_url unique index is the hard guarantee. A duplicate card is user-deletable.
   let promotable = scored
   let duplicatesSkipped = 0
   if (scored.length > 0) {
     const { data: existing } = await supabase
       .from('job_applications').select('company, role').eq('user_id', userId)
-    const seen = new Set((existing ?? []).map((e) => `${(e.company ?? '').toLowerCase()}|${(e.role ?? '').toLowerCase()}`))
+    const seen = new Set((existing ?? []).map((e) => dedupKey(e.company ?? '', e.role ?? '')))
     promotable = scored.filter(({ row }) => {
-      const key = `${row.company.toLowerCase()}|${row.title.toLowerCase()}`
+      const key = dedupKey(row.company, row.title)
       if (seen.has(key)) { duplicatesSkipped++; return false }
       seen.add(key)
       return true
