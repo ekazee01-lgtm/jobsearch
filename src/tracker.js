@@ -444,7 +444,7 @@ async function planActiveApplications() {
     try {
         button.disabled = true;
         button.textContent = 'Planning...';
-        status.innerHTML = '<div class="loading-spinner">Classifying active jobs. No applications will be sent.</div>';
+        status.innerHTML = '<div class="loading-spinner">Classifying pending jobs. No applications will be sent.</div>';
 
         const token = await getAccessToken();
         const response = await fetch(`${SUPABASE_URL}/functions/v1/plan-submission`, {
@@ -460,7 +460,7 @@ async function planActiveApplications() {
             throw new Error(result.error || 'Application planning failed');
         }
 
-        status.innerHTML = `<div class="success">Planned ${result.jobs_considered} active job(s): ${result.plans_created} new, ${result.plans_unchanged} unchanged. Outward actions: 0.</div>`;
+        status.innerHTML = `<div class="success">Planned ${result.jobs_considered} pending job(s): ${result.plans_created} new, ${result.plans_unchanged} unchanged. Outward actions: 0.</div>`;
         await loadSubmissionPlans();
     } catch (error) {
         console.error('Application planning failed:', error);
