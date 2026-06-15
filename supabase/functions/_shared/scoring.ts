@@ -157,10 +157,13 @@ ${JSON.stringify(items)}`,
     response_format: { type: 'json_object' },
     max_completion_tokens: 8000,
   }
-  // GPT-5.4 renamed the lowest reasoning tier 'minimal' -> 'none'; sending
-  // 'minimal' to a gpt-5.4* model is an invalid enum and returns HTTP 400.
-  if (model.startsWith('gpt-5')) body.reasoning_effort = model.startsWith('gpt-5.4') ? 'none' : 'minimal'
-  else body.temperature = 0
+  // GPT-5.4's lowest reasoning tier is 'none' (renamed from the original GPT-5
+  // 'minimal'). Other GPT-5.x minors disagree on the enum (e.g. 5.1 rejects
+  // 'minimal'), so only set it for the model we target and omit it for other
+  // GPT-5 variants — an unset value uses the model default and never 400s.
+  // Non-GPT-5 models (e.g. gpt-4o-mini) still take temperature.
+  if (model.startsWith('gpt-5.4')) body.reasoning_effort = 'none'
+  else if (!model.startsWith('gpt-5')) body.temperature = 0
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 45_000)
