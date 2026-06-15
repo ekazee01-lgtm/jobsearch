@@ -206,6 +206,188 @@
 }
 
 /* ============================================================================
+   Phase 0 submission planning queue
+   ============================================================================ */
+
+.submission-queue {
+    margin: 1.25rem 0 1.75rem;
+    padding: 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-sm);
+}
+
+.submission-queue-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.submission-queue-header h2 {
+    margin: 0.1rem 0 0.35rem;
+    font-size: 1.2rem;
+}
+
+.submission-queue-header p {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 0.88rem;
+}
+
+.submission-queue-header .section-kicker {
+    color: var(--accent);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.submission-queue-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.submission-queue-controls label {
+    color: var(--text-2);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.submission-queue-controls select {
+    padding: 0.5rem 0.7rem;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    font: inherit;
+    font-size: 0.84rem;
+}
+
+.submission-plan-summary {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+}
+
+.submission-plan-summary span {
+    padding: 0.25rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    color: var(--text-2);
+    font-size: 0.76rem;
+    font-weight: 600;
+}
+
+.submission-plan-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 0.85rem;
+    margin-top: 1rem;
+}
+
+.submission-plan-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-2);
+}
+
+.submission-plan-card h3 {
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.submission-plan-company {
+    margin: 0.15rem 0 0;
+    color: var(--accent);
+    font-size: 0.84rem;
+    font-weight: 600;
+}
+
+.submission-plan-badges {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.submission-plan-badge {
+    padding: 0.18rem 0.55rem;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    color: var(--text-2);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: capitalize;
+}
+
+.submission-plan-badge.lane-email {
+    color: var(--green);
+    background: var(--green-soft);
+    border-color: transparent;
+}
+
+.submission-plan-badge.lane-assisted {
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-color: transparent;
+}
+
+.submission-plan-badge.lane-manual {
+    color: var(--amber);
+    background: var(--amber-soft);
+    border-color: transparent;
+}
+
+.submission-plan-reason,
+.submission-plan-materials,
+.submission-plan-answers {
+    margin: 0;
+    color: var(--text-2);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.submission-plan-warning {
+    padding: 0.55rem 0.65rem;
+    border-left: 3px solid var(--amber);
+    border-radius: var(--radius-sm);
+    background: var(--amber-soft);
+    color: var(--text);
+    font-size: 0.78rem;
+}
+
+.submission-plan-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto;
+}
+
+.submission-plan-actions button,
+.submission-plan-actions a {
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.submission-plan-empty {
+    margin: 0;
+    color: var(--text-3);
+    font-size: 0.86rem;
+    font-style: italic;
+}
+
+/* ============================================================================
    Bulk actions
    ============================================================================ */
 
@@ -289,6 +471,16 @@
     font-size: 0.78rem;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+}
+
+/* Persistent hint that the "Applying" stage triggers server-side auto-tailoring */
+.column-hint {
+    margin: -0.5rem 0 0.75rem;
+    padding: 0 0.4rem;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-2);
+    cursor: help;
 }
 
 /* ============================================================================
@@ -826,6 +1018,10 @@
 
     .alerts-section {
         grid-template-columns: 1fr;
+    }
+
+    .submission-queue-header {
+        flex-direction: column;
     }
 
     .form-row {

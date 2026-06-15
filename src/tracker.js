@@ -13,6 +13,8 @@ let jobs = [];
 let filteredJobs = [];
 let aiFeatures = null;
 let currentJobId = null;
+let submissionPlans = [];
+let submissionAnswers = [];
 let activeFilters = {};
 let columnSettings = {
     showSalary: true,
@@ -87,6 +89,7 @@ async function checkAuth() {
     }
 
     await loadJobs();
+    await loadSubmissionPlans();
     showDashboard();
 }
 
@@ -286,6 +289,9 @@ function setupEventListeners() {
 
     // Add job button
     document.getElementById('add-job-btn').addEventListener('click', () => openJobModal());
+    document.getElementById('plan-submissions-btn').addEventListener('click', planActiveApplications);
+    document.getElementById('refresh-submission-plans-btn').addEventListener('click', loadSubmissionPlans);
+    document.getElementById('submission-plan-filter').addEventListener('change', renderSubmissionPlans);
 
     // AI Features buttons
     document.getElementById('setup-ai-btn').addEventListener('click', setupAIFeatures);
@@ -416,6 +422,204 @@ async function handleJobSubmit(e) {
 
     if (movingToApply) {
         config.showMessage('✨ Queued for auto-tailoring — materials will appear within a few minutes.', 'info');
+    }
+}
+
+// ============================================================================
+// PHASE 0 SUBMISSION PLANNING
+// ============================================================================
+
+async function getAccessToken() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+        throw new Error('Your session expired. Sign in again.');
+    }
+    return session.access_token;
+}
+
+async function planActiveApplications() {
+    const button = document.getElementById('plan-submissions-btn');
+    const status = document.getElementById('submission-plan-status');
+
+    try {
+        button.disabled = true;
+        button.textContent = 'Planning...';
+        status.innerHTML = '<div class="loading-spinner">Classifying active jobs. No applications will be sent.</div>';
+
+        const token = await getAccessToken();
+        const response = await fetch(`${SUPABASE_URL}/functions/v1/plan-submission`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.error || 'Application planning failed');
+        }
+
+        status.innerHTML = `<div class="success">Planned ${result.jobs_considered} active job(s): ${result.plans_created} new, ${result.plans_unchanged} unchanged. Outward actions: 0.</div>`;
+        await loadSubmissionPlans();
+    } catch (error) {
+        console.error('Application planning failed:', error);
+        status.innerHTML = `<div class="error">${escapeHtml(error.message)}</div>`;
+    } finally {
+        button.disabled = false;
+        button.textContent = '🧭 Plan Applications';
+    }
+}
+
+async function loadSubmissionPlans() {
+    const status = document.getElementById('submission-plan-status');
+    const { data: plans, error } = await supabase
+        .from('application_submissions')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        if (isSubmissionSchemaMissing(error)) {
+            setSubmissionPlanningAvailable(false);
+            return;
+        }
+        console.error('Error loading submission plans:', error);
+        status.innerHTML = `<div class="error">Submission plans are unavailable: ${escapeHtml(error.message)}</div>`;
+        return;
+    }
+    setSubmissionPlanningAvailable(true);
+
+    // Keep the newest plan per job. Older versions remain in the database audit
+    // trail but do not clutter the active review queue.
+    const seenJobs = new Set();
+    submissionPlans = (plans || []).filter(plan => {
+        if (seenJobs.has(plan.job_id)) return false;
+        seenJobs.add(plan.job_id);
+        return true;
+    });
+
+    const planIds = submissionPlans.map(plan => plan.id);
+    submissionAnswers = [];
+    if (planIds.length > 0) {
+        const { data: answers, error: answersError } = await supabase
+            .from('application_answers')
+            .select('*')
+            .in('submission_id', planIds)
+            .order('created_at', { ascending: true });
+        if (answersError) {
+            if (isSubmissionSchemaMissing(answersError)) {
+                setSubmissionPlanningAvailable(false);
+                return;
+            }
+            console.error('Error loading submission answers:', answersError);
+        } else {
+            submissionAnswers = answers || [];
+        }
+    }
+
+    renderSubmissionPlans();
+}
+
+function isSubmissionSchemaMissing(error) {
+    return error?.code === '42P01'
+        || error?.code === 'PGRST205'
+        || /application_(submissions|answers).*schema cache/i.test(error?.message || '');
+}
+
+function setSubmissionPlanningAvailable(available) {
+    const queue = document.querySelector('.submission-queue');
+    const button = document.getElementById('plan-submissions-btn');
+    queue.style.display = available ? '' : 'none';
+    button.style.display = available ? '' : 'none';
+
+    if (!available) {
+        submissionPlans = [];
+        submissionAnswers = [];
+        document.getElementById('submission-plan-status').innerHTML = '';
+    }
+}
+
+function renderSubmissionPlans() {
+    const list = document.getElementById('submission-plan-list');
+    const summary = document.getElementById('submission-plan-summary');
+    const filter = document.getElementById('submission-plan-filter').value;
+    const visible = filter === 'all'
+        ? submissionPlans
+        : submissionPlans.filter(plan => plan.status === filter);
+
+    const laneCounts = submissionPlans.reduce((counts, plan) => {
+        counts[plan.channel] = (counts[plan.channel] || 0) + 1;
+        return counts;
+    }, {});
+    summary.innerHTML = [
+        `<span>${submissionPlans.length} current plan(s)</span>`,
+        ...Object.entries(laneCounts).map(([lane, count]) =>
+            `<span>${escapeHtml(lane)}: ${count}</span>`)
+    ].join('');
+
+    if (visible.length === 0) {
+        list.innerHTML = '<p class="submission-plan-empty">No plans match this view.</p>';
+        return;
+    }
+
+    list.innerHTML = visible.map(plan => {
+        const job = jobs.find(item => item.id?.toString() === plan.job_id?.toString()) || {};
+        const answers = submissionAnswers.filter(answer => answer.submission_id === plan.id);
+        const missingRequired = answers.filter(answer => answer.required && !answer.answer);
+        const payload = plan.payload || {};
+        const materials = payload.materials || {};
+        const materialSummary = materials.resume_version_id
+            ? `${materials.has_resume ? 'Resume ready' : 'Resume missing'} · ${materials.has_cover_letter ? 'Cover letter ready' : 'Cover letter missing'}`
+            : 'No tailored materials attached to this plan';
+        const answeredCount = answers.filter(answer => answer.answer).length;
+        const safeUrl = typeof job.url === 'string' && /^https?:\/\//i.test(job.url) ? job.url : '';
+        const reviewButton = plan.status === 'queued'
+            ? `<button class="btn-primary" onclick="reviewSubmissionPlan('${escapeHtml(plan.id)}')">Mark reviewed</button>`
+            : '';
+        const intervention = plan.status === 'needs_intervention'
+            ? `<div class="submission-plan-warning">Needs intervention: ${escapeHtml(plan.intervention_reason || 'manual review')}</div>`
+            : '';
+        const missing = missingRequired.length > 0
+            ? `<div class="submission-plan-warning">Missing required profile data: ${missingRequired.map(answer => escapeHtml(answer.question)).join(', ')}</div>`
+            : '';
+
+        return `
+            <article class="submission-plan-card">
+                <div>
+                    <h3>${escapeHtml(job.role || payload.job?.role || 'Unknown role')}</h3>
+                    <p class="submission-plan-company">${escapeHtml(job.company || payload.job?.company || 'Unknown company')}</p>
+                </div>
+                <div class="submission-plan-badges">
+                    <span class="submission-plan-badge lane-${escapeHtml(plan.channel)}">${escapeHtml(plan.channel)}</span>
+                    <span class="submission-plan-badge">${escapeHtml(plan.status.replaceAll('_', ' '))}</span>
+                    <span class="submission-plan-badge">v${plan.plan_version}</span>
+                </div>
+                <p class="submission-plan-reason">${escapeHtml(plan.route_reason)}</p>
+                <p class="submission-plan-materials"><strong>Materials:</strong> ${escapeHtml(materialSummary)}</p>
+                <p class="submission-plan-answers"><strong>Profile fields:</strong> ${answeredCount}/${answers.length} available</p>
+                ${missing}
+                ${intervention}
+                <div class="submission-plan-actions">
+                    ${reviewButton}
+                    ${safeUrl ? `<a class="btn-secondary" href="${escapeHtml(safeUrl)}" target="_blank" rel="noopener noreferrer">View posting</a>` : ''}
+                </div>
+            </article>
+        `;
+    }).join('');
+}
+
+window.reviewSubmissionPlan = async function(submissionId) {
+    try {
+        const { error } = await supabase.rpc('review_application_submission_plan', {
+            p_submission_id: submissionId
+        });
+        if (error) throw error;
+
+        config.showMessage('Plan marked reviewed. Phase 0 still performs no submission.', 'success');
+        await loadSubmissionPlans();
+    } catch (error) {
+        console.error('Error reviewing submission plan:', error);
+        alert('Could not mark plan reviewed: ' + error.message);
     }
 }
 

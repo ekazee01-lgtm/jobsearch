@@ -1,6 +1,6 @@
-// Shared helpers for cron-invoked Edge Functions.
-// These functions are deployed with --no-verify-jwt and instead authenticate
-// the caller via the x-cron-secret header (set in Supabase Vault + secrets).
+// Shared response and service-role client helpers for Edge Functions.
+// Cron-invoked functions can additionally use requireCronSecret when deployed
+// with --no-verify-jwt.
 
 import { createClient, SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 

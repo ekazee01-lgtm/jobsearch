@@ -74,6 +74,7 @@
             <!-- Action Buttons -->
             <div class="action-buttons">
                 <button id="add-job-btn" class="btn-primary">+ Add New Job</button>
+                <button type="button" id="plan-submissions-btn" class="btn-secondary">🧭 Plan Applications</button>
                 <button id="setup-ai-btn" class="btn-secondary">🤖 Setup AI Features</button>
                 <button id="manage-resume-btn" class="btn-secondary">📄 Manage Resumes</button>
                 <button id="manage-cover-btn" class="btn-secondary">✉️ Manage Cover Letters</button>
@@ -158,6 +159,32 @@
                 </div>
             </div>
 
+            <!-- Phase 0 submission planning queue -->
+            <section class="submission-queue" aria-labelledby="submission-queue-title">
+                <div class="submission-queue-header">
+                    <div>
+                        <p class="section-kicker">Phase 0 · planning only</p>
+                        <h2 id="submission-queue-title">Application Plans</h2>
+                        <p>Routes active jobs and prepares review data. Nothing is sent, submitted, or opened automatically.</p>
+                    </div>
+                    <div class="submission-queue-controls">
+                        <label for="submission-plan-filter">Show</label>
+                        <select id="submission-plan-filter">
+                            <option value="all">All plans</option>
+                            <option value="queued">Needs review</option>
+                            <option value="awaiting_approval">Reviewed</option>
+                            <option value="needs_intervention">Needs intervention</option>
+                        </select>
+                        <button type="button" id="refresh-submission-plans-btn" class="btn-secondary">Refresh</button>
+                    </div>
+                </div>
+                <div id="submission-plan-summary" class="submission-plan-summary"></div>
+                <div id="submission-plan-status" class="status-message"></div>
+                <div id="submission-plan-list" class="submission-plan-list">
+                    <p class="submission-plan-empty">No plans yet. Click “Plan Applications” to classify active jobs.</p>
+                </div>
+            </section>
+
             <!-- Job Pipeline (Kanban) -->
             <section class="pipeline">
                 <div class="pipeline-column" data-status="to-review">
@@ -172,6 +199,7 @@
 
                 <div class="pipeline-column" data-status="applying">
                     <h3>✍️ Applying <span class="count">0</span></h3>
+                    <p class="column-hint" title="When a job enters Applying, the server automatically tailors a resume and cover letter for it — no need to keep this tab open.">🤖 Auto-tailors on entry</p>
                     <div class="job-cards" id="applying-cards"></div>
                 </div>
 
@@ -270,7 +298,7 @@
                         <select id="status" required>
                             <option value="To Review">To Review</option>
                             <option value="Bookmarked">Bookmarked</option>
-                            <option value="Applying">Applying</option>
+                            <option value="Applying">Applying (🤖 auto-tailors resume + cover letter)</option>
                             <option value="Applied">Applied</option>
                             <option value="Interview">Interview</option>
                             <option value="Offer">Offer</option>
@@ -445,10 +473,11 @@ I am writing to express my interest in..."></textarea>
 
             <div id="bulk-status-selection" style="display: none;">
                 <label for="bulk-status">New Status:</label>
+                <p class="column-hint">Moving jobs to “Applying” auto-tailors a resume + cover letter for each on the server.</p>
                 <select id="bulk-status">
                     <option value="To Review">To Review</option>
                     <option value="Bookmarked">Bookmarked</option>
-                    <option value="Applying">Applying</option>
+                    <option value="Applying">Applying (🤖 auto-tailors resume + cover letter)</option>
                     <option value="Applied">Applied</option>
                     <option value="Interview">Interview</option>
                     <option value="Offer">Offer</option>

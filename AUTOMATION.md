@@ -34,6 +34,13 @@ pg_cron (inside Supabase Postgres)
         validate, refuse to save fabricated/truncated output
      5. save into public.resume_versions + log provenance to application_events
 
+User-triggered -> Edge Function: plan-submission (Phase 0, no outward actions)
+  1. classify active jobs into email / assisted / manual lanes
+  2. keep API routing disabled unless employer-issued credentials are configured
+  3. snapshot candidate fields + latest tailored-material references
+  4. write versioned plans to application_submissions + application_answers
+  5. show plans in the tracker review queue; marking reviewed still sends nothing
+
 Tracker UI (GitHub Pages)
   -> move a card to "Applying" (Edit -> Status, or bulk)  ==> auto-tailored server-side
   -> OR click the AI button on a card for instant tailoring from a chosen template
@@ -53,6 +60,7 @@ facts, and the job description is treated as untrusted input.
 | Daily digest / tracker summary | `daily-digest` + `pg_cron` |
 | Resume tailoring (manual) | `tailor-resume` Edge Function (AI button) |
 | Auto-tailoring on apply | `process-ready-jobs` + `pg_cron` (server-side, durable) |
+| Submission routing / review | `plan-submission` + tracker review queue (Phase 0; zero outward actions) |
 | Email job-alert ingestion | `ingest-email-jobs` + a Gmail Apps Script (every 4h) — LLM-extracts jobs from alert emails (Indeed/LinkedIn), runs the same scoring as RSS. Setup + script: [docs/email-ingest.md](docs/email-ingest.md). Completed messages are tracked in `ingested_email_messages`; failures cool down in `email_ingest_retries` and quarantine after five attempts so poison messages cannot block the queue. URL dedup is enforced; company+role dedup is best-effort under concurrent runs. |
 | Gmail auto-reply workflow | Deferred |
 | Weekly analytics workflow | Dropped |
@@ -68,6 +76,9 @@ facts, and the job description is treated as untrusted input.
 
 The restored database data does **not** recreate platform-level resources. A
 fresh project still needs extensions, secrets, functions, and cron schedules.
+The checked-in migrations are incremental against the restored application
+schema; they are not a complete empty-database bootstrap. Restore/create the
+base tables before running `supabase db push` on a brand-new project.
 
 ```powershell
 # 1. Link the repo to the current project
@@ -92,6 +103,7 @@ supabase functions deploy daily-digest --no-verify-jwt
 supabase functions deploy process-ready-jobs --no-verify-jwt
 supabase functions deploy ingest-email-jobs --no-verify-jwt
 supabase functions deploy tailor-resume
+supabase functions deploy plan-submission
 
 # 5. Enable the server-side extensions and apply the migrations
 #    create extension if not exists pg_cron;
@@ -165,7 +177,15 @@ the legal-AI 20% cap, and web-researched cover-letter personalization. See
 6. Invoke `daily-digest` the same way and confirm either:
    - the email arrives when `RESEND_API_KEY` is configured, or
    - the response reports `email_sent: false` with a `skipped_reason`.
-7. In the tracker, move a job to `Ready to Apply`, click `Tailor`, and confirm a new row appears in `public.resume_versions`.
+7. In the tracker, move a job to `Applying` and confirm a new row appears in
+   `public.resume_versions` after the auto-tailoring worker runs.
+8. Click `Plan Applications` and confirm:
+   - active jobs receive a current row in `public.application_submissions`
+   - profile fields appear in `public.application_answers`
+   - the function response reports `outward_actions: 0`
+   - rerunning without changing a job or its materials reports the plans as unchanged
+9. Mark one queued plan reviewed and confirm its status changes only to
+   `awaiting_approval`; no email or ATS request is made in Phase 0.
 
 ## Important Schema Notes
 
