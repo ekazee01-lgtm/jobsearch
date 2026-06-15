@@ -93,3 +93,34 @@ function ingestJobEmails() {
   dedup catches most RSS/email variants, but it is best-effort under overlapping
   runs because company+role is not a database uniqueness constraint.
 - To capture more boards, add their alert sender addresses to `SENDERS`.
+
+## Application reply tracking (Phase 1A)
+
+Application replies use a separate, privacy-limited poller. Only threads with
+the Gmail label `JobReplies` are forwarded. The server stores a classification
+proposal for review and **does not change job status in Phase 1A**.
+
+### One-time Gmail setup
+
+1. In Gmail, create a label named `JobReplies`.
+2. Create one or more conservative Gmail filters that apply `JobReplies` to
+   known recruiting senders or application-response subjects. Start narrow,
+   then add employer/recruiter domains as they appear. A starter query is:
+   ```
+   {from:(greenhouse.io lever.co ashbyhq.com smartrecruiters.com icims.com)
+    subject:(application interview recruiter recruiting offer)}
+   ```
+   Do not use a broad filter over the entire inbox. You can also apply the label
+   manually to any missed thread; the next poll will ingest it.
+3. In the existing Apps Script project, add a new file named
+   `ApplicationReplies.gs` and paste
+   [`scripts/gmail-application-replies.gs`](../scripts/gmail-application-replies.gs).
+4. Reuse the existing `CRON_SECRET` Script Property.
+5. Run `ingestApplicationReplies` once and authorize it. Confirm the log reports
+   `status_changes: 0` and `outward_actions: 0`.
+6. Add a time-driven trigger for `ingestApplicationReplies`, every 4 hours.
+
+The poller strips common signatures and quoted history, limits the body to 2 KB,
+and skips messages sent from the signed-in Gmail address. The Edge Function
+repeats the body trimming before classification and deduplicates by Gmail
+message ID.

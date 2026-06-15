@@ -185,6 +185,32 @@
                 </div>
             </section>
 
+            <!-- Phase 1A response review queue -->
+            <section class="submission-queue reply-queue" aria-labelledby="reply-queue-title">
+                <div class="submission-queue-header">
+                    <div>
+                        <p class="section-kicker">Phase 1A · review only</p>
+                        <h2 id="reply-queue-title">Application Replies</h2>
+                        <p>Classifies labeled employer replies and proposes outcomes. Confirming a proposal does not change job status in Phase 1A.</p>
+                    </div>
+                    <div class="submission-queue-controls">
+                        <label for="reply-review-filter">Show</label>
+                        <select id="reply-review-filter">
+                            <option value="pending_review">Needs review</option>
+                            <option value="all">All replies</option>
+                            <option value="confirmed">Confirmed</option>
+                            <option value="dismissed">Dismissed</option>
+                        </select>
+                        <button type="button" id="refresh-application-replies-btn" class="btn-secondary">Refresh</button>
+                    </div>
+                </div>
+                <div id="application-reply-summary" class="submission-plan-summary"></div>
+                <div id="application-reply-status" class="status-message"></div>
+                <div id="application-reply-list" class="submission-plan-list">
+                    <p class="submission-plan-empty">No labeled application replies have been ingested.</p>
+                </div>
+            </section>
+
             <!-- Job Pipeline (Kanban) -->
             <section class="pipeline">
                 <div class="pipeline-column" data-status="to-review">

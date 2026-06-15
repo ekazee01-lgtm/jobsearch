@@ -15,6 +15,7 @@ let aiFeatures = null;
 let currentJobId = null;
 let submissionPlans = [];
 let submissionAnswers = [];
+let applicationReplies = [];
 let activeFilters = {};
 let columnSettings = {
     showSalary: true,
@@ -90,6 +91,7 @@ async function checkAuth() {
 
     await loadJobs();
     await loadSubmissionPlans();
+    await loadApplicationReplies();
     showDashboard();
 }
 
@@ -292,6 +294,8 @@ function setupEventListeners() {
     document.getElementById('plan-submissions-btn').addEventListener('click', planActiveApplications);
     document.getElementById('refresh-submission-plans-btn').addEventListener('click', loadSubmissionPlans);
     document.getElementById('submission-plan-filter').addEventListener('change', renderSubmissionPlans);
+    document.getElementById('refresh-application-replies-btn').addEventListener('click', loadApplicationReplies);
+    document.getElementById('reply-review-filter').addEventListener('change', renderApplicationReplies);
 
     // AI Features buttons
     document.getElementById('setup-ai-btn').addEventListener('click', setupAIFeatures);
@@ -523,7 +527,7 @@ async function loadSubmissionPlans() {
 function isSubmissionSchemaMissing(error) {
     return error?.code === '42P01'
         || error?.code === 'PGRST205'
-        || /application_(submissions|answers).*schema cache/i.test(error?.message || '');
+        || /application_(submissions|answers|replies).*schema cache/i.test(error?.message || '');
 }
 
 function setSubmissionPlanningAvailable(available) {
@@ -620,6 +624,144 @@ window.reviewSubmissionPlan = async function(submissionId) {
     } catch (error) {
         console.error('Error reviewing submission plan:', error);
         alert('Could not mark plan reviewed: ' + error.message);
+    }
+}
+
+// ============================================================================
+// PHASE 1A APPLICATION REPLY REVIEW
+// ============================================================================
+
+async function loadApplicationReplies() {
+    const status = document.getElementById('application-reply-status');
+    const { data, error } = await supabase
+        .from('application_replies')
+        .select('*')
+        .order('received_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        if (isSubmissionSchemaMissing(error)) {
+            setReplyTrackingAvailable(false);
+            return;
+        }
+        console.error('Error loading application replies:', error);
+        status.innerHTML = `<div class="error">Application replies are unavailable: ${escapeHtml(error.message)}</div>`;
+        return;
+    }
+
+    setReplyTrackingAvailable(true);
+    applicationReplies = data || [];
+    renderApplicationReplies();
+}
+
+function setReplyTrackingAvailable(available) {
+    const queue = document.querySelector('.reply-queue');
+    queue.style.display = available ? '' : 'none';
+    if (!available) {
+        applicationReplies = [];
+        document.getElementById('application-reply-status').innerHTML = '';
+    }
+}
+
+function renderApplicationReplies() {
+    const list = document.getElementById('application-reply-list');
+    const summary = document.getElementById('application-reply-summary');
+    const filter = document.getElementById('reply-review-filter').value;
+    const visible = filter === 'all'
+        ? applicationReplies
+        : applicationReplies.filter(reply => reply.review_state === filter);
+    const pendingCount = applicationReplies.filter(reply => reply.review_state === 'pending_review').length;
+    const unmatchedCount = applicationReplies.filter(reply => !reply.job_id).length;
+
+    summary.innerHTML = [
+        `<span>${applicationReplies.length} reply/replies</span>`,
+        `<span>needs review: ${pendingCount}</span>`,
+        `<span>unmatched: ${unmatchedCount}</span>`
+    ].join('');
+
+    if (visible.length === 0) {
+        list.innerHTML = '<p class="submission-plan-empty">No replies match this view.</p>';
+        return;
+    }
+
+    const jobOptions = jobs
+        .map(job => `<option value="${escapeHtml(job.id)}">${escapeHtml(job.company)} — ${escapeHtml(job.role)}</option>`)
+        .join('');
+
+    list.innerHTML = visible.map(reply => {
+        const linkedJob = jobs.find(job => job.id?.toString() === reply.job_id?.toString());
+        const confidence = Math.round(Number(reply.classification_confidence || 0) * 100);
+        const correlationConfidence = Math.round(Number(reply.correlation_confidence || 0) * 100);
+        const received = reply.received_at ? new Date(reply.received_at).toLocaleString() : 'Unknown date';
+        const proposed = reply.proposed_status || 'No status proposal';
+        const isPending = reply.review_state === 'pending_review';
+        const linkSelectId = `reply-job-${reply.id}`;
+        const safeReplyId = escapeHtml(reply.id);
+        const actions = isPending
+            ? `
+                <div class="reply-link-controls">
+                    <select id="${escapeHtml(linkSelectId)}" aria-label="Link reply to job">
+                        <option value="">Select a job...</option>
+                        ${jobOptions}
+                    </select>
+                    <button class="btn-secondary" onclick="linkApplicationReply('${safeReplyId}')">Link to job</button>
+                </div>
+                <div class="submission-plan-actions">
+                    <button class="btn-primary" onclick="reviewApplicationReply('${safeReplyId}', 'confirm')">Confirm classification</button>
+                    <button class="btn-secondary" onclick="reviewApplicationReply('${safeReplyId}', 'dismiss')">Dismiss</button>
+                </div>
+            `
+            : '';
+
+        return `
+            <article class="submission-plan-card reply-card">
+                <div>
+                    <h3>${escapeHtml(reply.subject || '(No subject)')}</h3>
+                    <p class="submission-plan-company">${escapeHtml(reply.from_email || reply.from_domain || 'Unknown sender')}</p>
+                </div>
+                <div class="submission-plan-badges">
+                    <span class="submission-plan-badge">${escapeHtml(reply.classification.replaceAll('_', ' '))}</span>
+                    <span class="submission-plan-badge">${confidence}% confidence</span>
+                    <span class="submission-plan-badge">${escapeHtml(reply.review_state.replaceAll('_', ' '))}</span>
+                </div>
+                <p class="reply-card-subject"><strong>Received:</strong> ${escapeHtml(received)}</p>
+                <p class="reply-card-rationale"><strong>Why:</strong> ${escapeHtml(reply.classification_rationale)}</p>
+                <p class="reply-card-snippet">${escapeHtml(reply.snippet || 'No message preview available.')}</p>
+                <p class="reply-card-match"><strong>Proposed:</strong> ${escapeHtml(proposed)}</p>
+                <p class="reply-card-match"><strong>Matched job:</strong> ${escapeHtml(linkedJob ? `${linkedJob.company} — ${linkedJob.role}` : 'Unmatched')} (${escapeHtml(reply.correlation_method)}, ${correlationConfidence}%)</p>
+                ${actions}
+            </article>
+        `;
+    }).join('');
+}
+
+window.linkApplicationReply = async function(replyId) {
+    const select = document.getElementById(`reply-job-${replyId}`);
+    const jobId = select?.value;
+    if (!jobId) {
+        alert('Select a job to link first.');
+        return;
+    }
+    await reviewApplicationReply(replyId, 'link', jobId);
+}
+
+window.reviewApplicationReply = async function(replyId, action, jobId = null) {
+    try {
+        const { error } = await supabase.rpc('review_application_reply', {
+            p_reply_id: replyId,
+            p_action: action,
+            p_job_id: jobId
+        });
+        if (error) throw error;
+
+        const message = action === 'link'
+            ? 'Reply linked to the selected job. No job status changed.'
+            : `Reply ${action === 'confirm' ? 'classification confirmed' : 'dismissed'}. No job status changed.`;
+        config.showMessage(message, 'success');
+        await loadApplicationReplies();
+    } catch (error) {
+        console.error('Error reviewing application reply:', error);
+        alert('Could not review application reply: ' + error.message);
     }
 }
 

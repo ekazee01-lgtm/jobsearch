@@ -41,6 +41,13 @@ User-triggered -> Edge Function: plan-submission (Phase 0, no outward actions)
   4. write versioned plans to application_submissions + application_answers
   5. show plans in the tracker review queue; marking reviewed still sends nothing
 
+Gmail Apps Script -> Edge Function: ingest-application-replies (Phase 1A)
+  1. forward only messages in JobReplies-labeled Gmail threads
+  2. trim signatures/quoted history and classify the reply as untrusted input
+  3. conservatively correlate to an existing application or leave unmatched
+  4. write a pending review proposal to application_replies
+  5. apply zero job status changes and perform zero outward actions
+
 Tracker UI (GitHub Pages)
   -> move a card to "Applying" (Edit -> Status, or bulk)  ==> auto-tailored server-side
   -> OR click the AI button on a card for instant tailoring from a chosen template
@@ -61,6 +68,7 @@ facts, and the job description is treated as untrusted input.
 | Resume tailoring (manual) | `tailor-resume` Edge Function (AI button) |
 | Auto-tailoring on apply | `process-ready-jobs` + `pg_cron` (server-side, durable) |
 | Submission routing / review | `plan-submission` + tracker review queue (Phase 0; zero outward actions) |
+| Employer reply tracking | `ingest-application-replies` + Gmail Apps Script + tracker reply queue (Phase 1A; proposals only) |
 | Email job-alert ingestion | `ingest-email-jobs` + a Gmail Apps Script (every 4h) — LLM-extracts jobs from alert emails (Indeed/LinkedIn), runs the same scoring as RSS. Setup + script: [docs/email-ingest.md](docs/email-ingest.md). Completed messages are tracked in `ingested_email_messages`; failures cool down in `email_ingest_retries` and quarantine after five attempts so poison messages cannot block the queue. URL dedup is enforced; company+role dedup is best-effort under concurrent runs. |
 | Gmail auto-reply workflow | Deferred |
 | Weekly analytics workflow | Dropped |
@@ -104,6 +112,7 @@ supabase functions deploy process-ready-jobs --no-verify-jwt
 supabase functions deploy ingest-email-jobs --no-verify-jwt
 supabase functions deploy tailor-resume
 supabase functions deploy plan-submission
+supabase functions deploy ingest-application-replies --no-verify-jwt
 
 # 5. Enable the server-side extensions and apply the migrations
 #    create extension if not exists pg_cron;
