@@ -148,7 +148,7 @@ AI Program/Project Management. Tier 2 = expert AI Trainer/Annotator (ONLY if
 W-2 or a named 3+ month contract — gig/task work is Tier 0) and Legal AI/
 Enterprise AI. Set "tier" to "1", "2", or "0".
 
-Return ONLY: {"scores":[{"i":<index>,"score":<1-10>,"reason":"<one sentence>","tier":"0|1|2"}]}
+Return ONLY this JSON object: {"scores":[{"i":<index>,"score":<1-10>,"reason":"<one sentence>","tier":"0|1|2"}]}
 Include every item exactly once.
 
 Job postings:
@@ -157,7 +157,9 @@ ${JSON.stringify(items)}`,
     response_format: { type: 'json_object' },
     max_completion_tokens: 8000,
   }
-  if (model.startsWith('gpt-5')) body.reasoning_effort = 'minimal'
+  // GPT-5.4 renamed the lowest reasoning tier 'minimal' -> 'none'; sending
+  // 'minimal' to a gpt-5.4* model is an invalid enum and returns HTTP 400.
+  if (model.startsWith('gpt-5')) body.reasoning_effort = model.startsWith('gpt-5.4') ? 'none' : 'minimal'
   else body.temperature = 0
 
   const controller = new AbortController()
