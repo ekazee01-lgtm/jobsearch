@@ -103,15 +103,10 @@ proposal for review and **does not change job status in Phase 1A**.
 ### One-time Gmail setup
 
 1. In Gmail, create a label named `JobReplies`.
-2. Create one or more conservative Gmail filters that apply `JobReplies` to
-   known recruiting senders or application-response subjects. Start narrow,
-   then add employer/recruiter domains as they appear. A starter query is:
-   ```
-   {from:(greenhouse.io lever.co ashbyhq.com smartrecruiters.com icims.com)
-    subject:(application interview recruiter recruiting offer)}
-   ```
-   Do not use a broad filter over the entire inbox. You can also apply the label
-   manually to any missed thread; the next poll will ingest it.
+2. Add one or more Gmail filters that apply the `JobReplies` label. See
+   **[Filter strategies](#filter-strategies)** below for the recommended options
+   and ready-to-paste queries. You can also apply the label manually to any
+   missed thread; the next poll ingests it.
 3. In the existing Apps Script project, add a new file named
    `ApplicationReplies.gs` and paste
    [`scripts/gmail-application-replies.gs`](../scripts/gmail-application-replies.gs).
@@ -124,3 +119,47 @@ The poller strips common signatures and quoted history, limits the body to 2 KB,
 and skips messages sent from the signed-in Gmail address. The Edge Function
 repeats the body trimming before classification and deduplicates by Gmail
 message ID.
+
+### Filter strategies
+
+Three ways to populate the `JobReplies` label, **highest precision first**.
+Mix and match; refine over time. Because selection is label-based for privacy,
+**only labeled mail ever reaches the classifier** — anything unlabeled is simply
+invisible to reply tracking until you label it.
+
+**Currently active: plus-addressing (option 1).**
+
+**1. Plus-addressing — highest precision (in use).**
+Gmail ignores everything after a `+`, so `ekazee01+apply@gmail.com` still
+delivers to your inbox. Use that address as your contact email when applying
+(works for ATS web forms *and* email applications). Every reply is then
+addressed to it, so one airtight filter catches them with near-zero false
+positives — it keys on *"this is a reply to something I applied to,"* not on
+guessing words:
+```
+to:ekazee01+apply@gmail.com
+```
+Trade-off: only covers applications submitted with that address going forward, so
+adopt it for all new applications.
+
+**2. Broad sender/subject net — coverage for applications not using the +alias.**
+Combine common ATS sender domains with application-phrase subjects in the
+filter's *"Has the words"* box:
+```
+from:(greenhouse.io OR greenhouse-mail.io OR lever.co OR hire.lever.co OR myworkdayjobs.com OR icims.com OR ashbyhq.com OR smartrecruiters.com OR jobvite.com OR workable.com OR bamboohr.com OR breezy.hr OR recruitee.com) OR from:(careers OR recruiting OR recruiter OR talent OR no-reply OR noreply OR donotreply) OR subject:("your application" OR "application for" OR "thank you for applying" OR "application received" OR "application status" OR "next steps" OR interview OR candidacy)
+```
+Broader = more recall but more noise (the classifier labels noise `other` and
+correlation leaves it `unmatched`, at some LLM cost). If too noisy, drop the
+generic `from:(careers OR recruiting OR ...)` clause and keep the ATS domains +
+subjects. Add employer/recruiter domains as they appear.
+
+**3. Manual labeling — always available.**
+Apply `JobReplies` by hand to any thread the filters miss; the next 4-hour poll
+ingests it. This is the safety net for the label-based privacy trade-off.
+
+**Recommended refinement — exclude your job alerts** so reply tracking doesn't
+overlap with the alert-ingestion pipeline (`ingest-email-jobs`). Append to any
+broad filter:
+```
+-from:(jobalerts-noreply@linkedin.com OR jobs-noreply@linkedin.com OR alert@indeed.com OR match.indeed.com OR noreply@ziprecruiter.com)
+```
