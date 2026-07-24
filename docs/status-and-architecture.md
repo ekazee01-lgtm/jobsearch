@@ -2,7 +2,7 @@
 
 **Repo:** `ekazee01-lgtm/jobsearch` (public) · **Evidence as of commit `5d91daf`** (2026-06-16 12:14 CDT), the HEAD of `main` at review time.
 **Reviewed by:** Claude, read-only clone, 2026-07-23. No files in the live repository were modified. No Supabase, cron, Edge Function, or Apps Script runtime was invoked.
-**Suggested path:** `docs/status-and-architecture.md` (matches existing `docs/` naming: `auto-apply-design.md`, `email-ingest.md`, `phase1-response-tracking.md`). I don't have push access to this repo from this session — Eric needs to commit this file himself, or grant write access.
+**Canonical path:** `docs/status-and-architecture.md`.
 
 ---
 
